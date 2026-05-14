@@ -8,11 +8,9 @@
 | Version           | 1.0                        |
 | Status            | Draft                      |
 
----
-
 ## 1. Context
 
-The Team Matcher is a Django application (`d:\work\uds\teammatcher`) that automates student-to-team assignment for an Open edX course at UDS. Built by a prior cohort, it accepts a roster CSV exported from Open edX, runs a genetic-algorithm matcher (PyGAD) over weighted criteria (availability, commitment, background, age, gender, experience, leadership, task interest), and produces a CSV that the teacher uploads back to Open edX.
+The Team Matcher is a Django application (the Team Matcher Django project) that automates student-to-team assignment for an Open edX course at UDS. Built by a prior cohort, it accepts a roster CSV exported from Open edX, runs a genetic-algorithm matcher (PyGAD) over weighted criteria (availability, commitment, background, age, gender, experience, leadership, task interest), and produces a CSV that the teacher uploads back to Open edX.
 
 The algorithm produces good matches most of the time, but **the teacher routinely needs to make manual adjustments**. The current workaround is:
 
