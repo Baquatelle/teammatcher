@@ -70,7 +70,7 @@ Before processing, raw student data is converted into a numerical matrix:
 
     # clone repository
     git clone https://github.com/s-001069/teammatcher.git
-    cd team-matcher
+    cd teammatcher
 
     # create venv
     python -m venv .venv
@@ -78,7 +78,7 @@ Before processing, raw student data is converted into a numerical matrix:
     # activate venv on linux:
     source venv/bin/activate
     # activate venv on windows:
-    venv\Scripts\activate
+    .venv\Scripts\activate
     
     # install requirements
     pip install -r requirements.txt
