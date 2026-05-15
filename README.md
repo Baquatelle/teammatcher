@@ -6,6 +6,11 @@
 * **Goal:** Replace inefficient and time-consuming manual grouping with an optimized data-driven approach.
 * **Core Technology:** Django (Web Framework), PyGAD (Genetic Algorithm), NumPy (Data Processing).
 
+
+
+
+
+
 ---
 
 ## 2. Key Features
