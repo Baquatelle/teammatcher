@@ -30,4 +30,3 @@ venv.bak/
 team_names.json
 
 tests/*
-*.csv
