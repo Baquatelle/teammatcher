@@ -18,7 +18,7 @@ The algorithm produces good matches most of the time, but **the teacher routinel
 2. Open in Excel → drag rows between teams by hand.
 3. Save as CSV → upload to Open edX.
 
-The goal of this task is to **make manual adjustments first-class inside the Team Matcher itself**, and — as connected improvements — to support partial re-matching, factor in student priorities during re-matches.
+The goal of this task is to **make manual adjustments first-class inside the Team Matcher itself**, and — as a connected improvement — to support partial re-matching.
 
 **Intended outcome:** the teacher can perform all team adjustments inside the Team Matcher UI and export a ready-to-upload CSV without ever opening Excel.
 
@@ -75,24 +75,13 @@ Access control: manual adjustment views are **teacher-only**, gated by Django's 
 - **FR-4.1** The teacher must be able to mark individual teams or individual students as **locked**. Locked entities are excluded from any subsequent re-match run.
 - **FR-4.2** A "Re-match unlocked" action runs the genetic matcher only over the unlocked students, distributing them across (a) existing unlocked teams with open slots, and/or (b) newly created teams, subject to the same min/max size constraints.
 - **FR-4.3** The teacher may adjust the criteria weights for the re-match independently of the initial generation's weights.
-- **FR-4.4** Re-matching must use the **same fitness function** as initial matching, with the addition of student-priority inputs (FR-5), and respecting locked-team membership as a hard constraint.
+- **FR-4.4** Re-matching must use the **same fitness function** as initial matching, respecting locked-team membership as a hard constraint.
 
-### FR-5. Student priorities (re-match input only)
-- **FR-5.1** The student profile form (`/student/`) must allow students to optionally provide:
-  - **Peer nominations:** up to N (suggested N = 3) student IDs of preferred teammates.
-  - **Project preferences:** a ranked or weighted set of preferred projects/tasks (reusing or extending the existing `Task` model).
-- **FR-5.2** Priorities are stored against the student profile and are visible to the teacher (e.g., as tooltips or a side panel in the manual-adjustment view).
-- **FR-5.3** Priorities are **not** applied during initial team generation. They are applied only when the teacher explicitly runs a re-match.
-- **FR-5.4** Peer nominations are soft preferences: the matcher should prefer placing nominator + nominee together but must not violate hard constraints (team size, locked teams) to do so.
-- **FR-5.5** Project preferences must integrate with the existing task-interest similarity criterion, with weighting controllable by the teacher at re-match time.
-- **FR-5.6** Nominations must not be reciprocity-required (A nominating B does not require B to nominate A).
-- **FR-5.7** The system must handle the case where a nominated student ID does not exist in the current roster (silently ignore, do not error).
-
-### FR-6. Validation & constraint feedback
-- **FR-6.1** While editing, the system must show — per team and overall — the current min/max size violation status.
-- **FR-6.2** Drag-and-drop operations that violate min/max are permitted ("soft warning, allow override"). The system must visually mark violating teams but must not refuse the drop.
-- **FR-6.3** On Download CSV, if any team violates min/max, the teacher must be shown a summary of violations and asked to confirm before the download proceeds.
-- **FR-6.4** The system must prevent a student from appearing on two teams simultaneously (this is a hard constraint, not a soft warning).
+### FR-5. Validation & constraint feedback
+- **FR-5.1** While editing, the system must show — per team and overall — the current min/max size violation status.
+- **FR-5.2** Drag-and-drop operations that violate min/max are permitted ("soft warning, allow override"). The system must visually mark violating teams but must not refuse the drop.
+- **FR-5.3** On Download CSV, if any team violates min/max, the teacher must be shown a summary of violations and asked to confirm before the download proceeds.
+- **FR-5.4** The system must prevent a student from appearing on two teams simultaneously (this is a hard constraint, not a soft warning).
 
 ## 5. Non-Functional Requirements
 
@@ -110,7 +99,6 @@ The following data must be representable in the system.
 - **Team** — a named group of students, with a lock flag and team-size constraint metadata.
 - **Team membership** — the link between `StudentProfile` and `Team`; must enforce one-team-per-student.
 - **Unassigned pool** — a logical bucket for students temporarily without a team; not necessarily a distinct DB object, but the UI must surface it.
-- **Student priorities** — peer nominations (list of student IDs) and project preferences (ranked or weighted list of `Task`s) attached to `StudentProfile`.
 - **CSVGeneration (existing)** — reused as the export snapshot and audit record. The live team state (not a CSV blob) is the canonical store of *current* assignments; `CSVGeneration` is written only on explicit export.
 
 ### Migration considerations
@@ -122,7 +110,7 @@ The following data must be representable in the system.
 
 - **UX-1.** The manual-adjustment view is reachable from the existing teacher dashboard (`/teacher/`) immediately after a generation completes, and accessible later from the historical-generations list.
 - **UX-2.** Each team is rendered as a card or column. Cards display: team name, member count, size-violation indicator, lock toggle, and the list of member students (draggable items).
-- **UX-3.** Each student item shows the information the teacher needs to recognize them (at minimum: student ID; preferably also availability summary, commitment level, and any priority nominations they made) and includes a **lock toggle** so individual students can be excluded from re-matching independently of their team's lock state.
+- **UX-3.** Each student item shows the information the teacher needs to recognize them (at minimum: student ID; preferably also availability summary and commitment level) and includes a **lock toggle** so individual students can be excluded from re-matching independently of their team's lock state.
 - **UX-4.** A persistent "Unassigned" zone is always visible.
 - **UX-5.** A toolbar exposes: **Re-match unlocked** and **Download CSV**.
 - **UX-6.** The criteria-weight form is available again in the re-match dialog, pre-populated with the values from the originating generation but editable per re-match.
@@ -133,15 +121,14 @@ The following data must be representable in the system.
 
 - The existing genetic-algorithm matcher (`teacher_side/matcher/`) is the source of truth for generating assignments and will be reused for re-matching. Its fitness function will be extended, not replaced.
 - Only one teacher is expected to edit the live team state at a time. No multi-user merge logic is required.
-- Students do not log in to provide priorities — they continue to identify themselves via `student_id` on the public student form, as today. This is a known limitation inherited from the existing tool.
+- Students identify themselves via `student_id` (= the `username` column in the LMS CSV) on the public student form. No login is required.
 
 ## 9. Risks & Open Questions
 
 | #  | Risk / Question                                                           | Notes                                                                                                            |
 | -- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| R1 | Peer nominations could be gamed (cliques excluding others).               | Soft-preference weighting (FR-5.4) limits but does not eliminate this. Acceptable for the teacher-overseen flow. |
-| R2 | A locked team that violates min/max size after lock can't be re-balanced. | Documented as expected behavior; locking is the teacher's explicit choice.                                       |
-| R3 | Existing `CSVGeneration` history has no associated `Team` rows.           | Treat as read-only legacy; no back-fill required.                                                                |
+| R1 | A locked team that violates min/max size after lock can't be re-balanced. | Documented as expected behavior; locking is the teacher's explicit choice.                                       |
+| R2 | Existing `CSVGeneration` history has no associated `Team` rows.           | Treat as read-only legacy; no back-fill required.                                                                |
 
 ## 10. Acceptance Criteria
 
@@ -152,10 +139,9 @@ The feature is complete when **all** of the following are true:
 3. The teacher can drag a student into an "Unassigned" pool and back into any team.
 4. Min/max size violations are visible per team during editing and summarized before CSV download, but do not block edits.
 5. The teacher can lock specific teams or students and run a re-match that respects those locks and leaves locked entities untouched.
-6. Student peer nominations and project preferences, collected via the student form, are visible to the teacher in the adjustment view and measurably influence re-match outcomes (verifiable via a test case where strong mutual nominations produce co-assignment).
-7. Download CSV produces a valid file that can be uploaded directly to Open edX without further editing. Each download creates an immutable `CSVGeneration` record.
-8. All new endpoints are gated by `staff_member_required`. CSRF protection is enforced on all mutating endpoints.
-9. The new views match the existing dark-themed visual design of the tool.
+6. Download CSV produces a valid file that can be uploaded directly to Open edX without further editing. The file preserves all original columns (`username`, `external_user_id`, `mode`, `cp`, `wp`) and adds the team name. Each download creates an immutable `CSVGeneration` record.
+7. All new endpoints are gated by `staff_member_required`. CSRF protection is enforced on all mutating endpoints.
+8. The new views match the existing dark-themed visual design of the tool.
 
 ## 11. Verification
 
@@ -168,8 +154,6 @@ The existing `student_side/tests.py` and `teacher_side/tests.py` are empty place
 **Models & data integrity**
 - A student can belong to at most one team at any time (FR-1.3). Assigning to a second team removes the previous membership atomically.
 - Locking a team or student is persisted and survives reload (FR-4.1).
-- Peer-nomination references to non-existent student IDs are accepted and silently ignored (FR-5.7).
-
 **Team-edit endpoints**
 - Moving a student between teams via the reassignment endpoint returns success and the database reflects the change.
 - Moving a non-existent student or to a non-existent team returns a clear error and does not corrupt state.
@@ -185,11 +169,7 @@ The existing `student_side/tests.py` and `teacher_side/tests.py` are empty place
 - Re-match operates only over unlocked students; unlocked students missing from any team end up assigned.
 - A re-match where every team is locked is a no-op and produces no error.
 
-**Priorities in re-matching (FR-5)**
-- With strong mutual peer nominations between two unlocked students and no conflicting constraints, the re-matcher places them on the same team (probabilistic check with a fixed RNG seed).
-- Priorities are *not* applied during initial generation: an initial run with the same input and seed produces the same output regardless of priority data on profiles.
-
-**Constraint validation (FR-6)**
+**Constraint validation (FR-5)**
 - Teams below min size and above max size are correctly flagged.
 - A drag operation that would create a violation succeeds (soft warning, not hard block).
 - A drag operation that would place a student on two teams simultaneously fails (hard constraint).
@@ -203,8 +183,8 @@ Target: tests run in under 30 seconds locally, executable via `python manage.py 
 
 - **Manual UX walkthrough.** Upload roster CSV → generate → manually adjust via drag-and-drop → lock a team → re-match the rest → Download CSV → upload to Open edX. Confirm no Excel detour is needed.
 - **Constraint-violation walkthrough.** Drag students until a team is below min and another is above max; confirm warnings appear, edits persist, and Download CSV prompts for confirmation.
-- **Priority walkthrough.** Have two students mutually nominate each other; run a re-match; confirm they end up on the same team where size constraints permit.
 - **Lock-respect walkthrough.** Lock a team; run a re-match; confirm the locked team's membership is byte-for-byte identical before and after.
+- **CSV format walkthrough.** Open the downloaded CSV and verify it matches the LMS template format: all original columns preserved, team name added, file uploads to Open edX without error.
 
 ---
 
@@ -212,7 +192,17 @@ Target: tests run in under 30 seconds locally, executable via `python manage.py 
 
 The following features are explicitly **out of scope for this iteration** but are documented here for future planning.
 
-### 12.1 Open edX API integration (two-way)
+### 12.1 Student priorities in re-matching
+
+Allow students to express preferences that influence the re-match, without affecting initial generation.
+
+- **Peer nominations:** students name up to 3 preferred teammates. The re-matcher treats these as soft constraints (prefer co-assignment, never violate hard constraints to enforce it).
+- **Project preferences:** students rank preferred tasks; integrated with the existing task-interest similarity criterion with teacher-adjustable weight.
+- Priorities collected via the existing `/student/` form; stored against `StudentProfile`; visible to the teacher in the adjustment view.
+- Not reciprocity-required: A nominating B does not require B to nominate A.
+- Invalid nominations (student ID not in roster) are silently ignored.
+
+### 12.2 Open edX API integration (two-way)
 
 Replace the CSV upload/download round-trip with direct API calls to Open edX, eliminating the manual upload step entirely.
 
@@ -224,7 +214,7 @@ Replace the CSV upload/download round-trip with direct API calls to Open edX, el
 
 **Key finding from API investigation (Appendix A):** the `POST /api/team/v0/teams/{course_id}/team_membership_csv` endpoint accepts the same CSV format the tool already produces, so the push step can reuse the existing CSV serialization with minimal additional work.
 
-### 12.2 API-related tests (when 12.1 is implemented)
+### 12.3 API-related tests (when 12.2 is implemented)
 
 - API client tests using mocked HTTP responses — no real network calls.
 - CSV round-trip test: the file produced locally matches the format Open edX's `team_membership_csv` endpoint expects.
