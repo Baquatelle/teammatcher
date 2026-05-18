@@ -1,0 +1,34 @@
+Abel used AI for the initial commit of the requirement document.
+Prompt:
+I give you a task description. Write a detailed requirement document. No plans for implementation yet.
+
+  Task 6 - Team Matcher - Manual Team Adjustments
+
+  Teams in Open edX can be created by downloading, editing and uploading a CSV file. In the previous course iteration, a team of your fellow students have created a tool that allows me to automate the team matching. Your fellow students have done a great job with the matching and it already works quite well, but sometimes manual adjustments have to be made. Currently, I'm still doing this in Excel. I export the teams from the tool, I do some manual adjustments in Excel, I export the Excel as .csv, then I upload the results to Open edX.
+
+  It would be great if these adjustments could be done in the tool itself. Basically, this would require one or two new views and some new logic and changes in the database.
+
+  The tool already provides a UI where the teacher can upload the empty teams file and select a couple of settings (e.g. max team size) this adds the entry and a set of inputs for each student and project assignment:
+  [Image #2]
+  It also provides a UI where the students can enter their data:
+  [Image #3]
+  and finally a Django Admin interface for general settings:
+  [Image #4]
+  General Resources for all Tasks
+
+      https://training.openedx.io/courses/course-v1:OpenedX+OEX-Dev101+2024/about
+      https://openedx.org/community/documentation/
+      https://docs.openedx.org/en/latest/developers/quickstarts/first_openedx_pr.html
+  Additional info:
+  mprove Team Matcher
+  Make rematching possible within Team Matcher instead of in the csv file —> drag and drop of individual Team Members to various Teams
+  Adapt UI
+  Possibly adding priorities of students as matching criteria, particularly for the re-matching (not for the original matching)
+  Further improvement possible: Using APIs to remove the necessity to upload and download CSV files to Open edX
+[Image #2]
+[Image #3]
+[Image #4]
+
+"Live editing with an explicit "Finalize / Export" step that snapshots the current state to a `CSVGeneration` record (so download URLs remain stable)." - this is obsolete, right? Direct openEdx API calls make CSV files unnecessary completely
+
+Then I worked on the requirements document without AI support.
