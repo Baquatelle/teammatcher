@@ -56,7 +56,7 @@ Access control: manual adjustment views are **teacher-only**, gated by Django's 
 
 ### FR-1. Persistent team representation
 - **FR-1.1** The system must persist team composition in the database. Teams must not be derived solely from CSV text.
-- **FR-1.2** A team has, at minimum: a name (from `TeamNameTemplate` or auto-generated), a set of student members, a creation timestamp, a reference to the matcher run that produced it (when applicable), and a flag indicating whether it is "locked" (excluded from future re-matches).
+- **FR-1.2** A team has, at minimum: a name (from `TeamNameTemplate` or auto-generated), a set of student members, a creation timestamp, and a flag indicating whether it is "locked" (excluded from future re-matches).
 - **FR-1.3** A student belongs to at most one team within a given matching session. Moving a student to a new team must atomically remove them from any previous team.
 - **FR-1.4** The system must continue to support historical `CSVGeneration` records as immutable export snapshots, but the **live working state** is the persistent team data, not a CSV blob.
 
@@ -108,8 +108,7 @@ Access control: manual adjustment views are **teacher-only**, gated by Django's 
 ## 5. Non-Functional Requirements
 
 - **NFR-1. Performance.** Drag-and-drop must feel instant on a roster of up to 200 students across up to 50 teams (much higher than the typical course size). Persistence after a drop should complete within ~300 ms on a local network; the UI must not block.
-- **NFR-2. Accessibility.** Drag-and-drop must have a keyboard-accessible fallback (e.g., select student → "move to team" dropdown), so the feature is usable without a mouse.
-- **NFR-3. Browser support.** Latest Chrome, Firefox, Edge, Safari. No IE.
+- **NFR-2. Browser support.** Latest Chrome, Firefox, Edge, Safari. No IE.
 - **NFR-4. Visual consistency.** New views must match the existing dark-themed Bootstrap 5 design system already used in `/teacher/` and `/student/` (gradient buttons, dark slate cards, Inter font, Bootstrap Icons).
 - **NFR-5. Security.** All manual-adjustment endpoints are gated by `staff_member_required`. Open edX API credentials are stored encrypted at rest or via Django's existing settings mechanism — never in plain text in the repo. CSRF protection on all state-mutating endpoints.
 - **NFR-6. Resilience.** Partial failures during a re-match or an Open edX push must leave the system in a recoverable state (no half-applied edits to live data).
@@ -119,7 +118,7 @@ Access control: manual adjustment views are **teacher-only**, gated by Django's 
 
 The following data must be representable in the system.
 
-- **Team** — a named group of students, tied to a matcher run, with a lock flag and team-size constraint metadata.
+- **Team** — a named group of students, with a lock flag and team-size constraint metadata.
 - **Team membership** — the link between `StudentProfile` and `Team`; must enforce one-team-per-student.
 - **Unassigned pool** — a logical bucket for students temporarily without a team; not necessarily a distinct DB object, but the UI must surface it.
 - **Student priorities** — peer nominations (list of student IDs) and project preferences (ranked or weighted list of `Task`s) attached to `StudentProfile`.
@@ -136,7 +135,7 @@ The following data must be representable in the system.
 
 - **UX-1.** The manual-adjustment view is reachable from the existing teacher dashboard (`/teacher/`) immediately after a generation completes, and accessible later from the historical-generations list.
 - **UX-2.** Each team is rendered as a card or column. Cards display: team name, member count, size-violation indicator, lock toggle, and the list of member students (draggable items).
-- **UX-3.** Each student item shows the information the teacher needs to recognize them (at minimum: student ID; preferably also availability summary, commitment level, and any priority nominations they made).
+- **UX-3.** Each student item shows the information the teacher needs to recognize them (at minimum: student ID; preferably also availability summary, commitment level, and any priority nominations they made) and includes a **lock toggle** so individual students can be excluded from re-matching independently of their team's lock state.
 - **UX-4.** A persistent "Unassigned" zone is always visible.
 - **UX-5.** A toolbar exposes: **Re-match unlocked**, **Apply (Push to Open edX)** as the primary action, and **Download CSV** as a secondary/fallback action.
 - **UX-6.** The criteria-weight form is available again in the re-match dialog, pre-populated with the values from the originating generation but editable per re-match.
@@ -231,7 +230,6 @@ Target: tests run in under 30 seconds locally, executable via `python manage.py 
 - **Priority walkthrough.** Have two students mutually nominate each other; run a re-match; confirm they end up on the same team where size constraints permit.
 - **Lock-respect walkthrough.** Lock a team; run a re-match; confirm the locked team's membership is byte-for-byte identical before and after.
 - **API fallback walkthrough.** With Open edX API disabled, confirm the CSV upload/download path still works end-to-end.
-- **Accessibility check.** Complete the same reassignment using only the keyboard.
 
 ## Appendix A — Open edX Teams API
 
@@ -258,7 +256,7 @@ All paths are under the LMS host. The `team_id` is a slugified string assigned b
 | Add member to team                          | `POST`   | `/api/team/v0/team_membership`                                               | Body: `username`, `team` (= team_id). Staff can add others; learners can only add themselves.                                                                                                         |
 | Remove member from team                     | `DELETE` | `/api/team/v0/team_membership/{team_id},{username}`                          | Staff can remove others.                                                                                                                                                                              |
 | List topics                                 | `GET`    | `/api/team/v0/topics/?course_id={course_id}`                                 | Topics group teams within a course.                                                                                                                                                                   |
-| **Bulk membership upload (killer feature)** | `POST`   | `/api/team/v0/teams/{course_id}/team_membership_csv`                         | **Staff only.** Accepts a CSV upload; Open edX applies the entire team-membership state in one operation. This is essentially the same path Abel uses manually today, exposed as a programmatic call. |
+| **Bulk membership upload (killer feature)** | `POST`   | `/api/team/v0/teams/{course_id}/team_membership_csv`                         | **Staff only.** Accepts a CSV upload; Open edX applies the entire team-membership state in one operation. This is essentially the same path the teacher uses manually today, exposed as a programmatic call. |
 | **Bulk membership download**                | `GET`    | `/api/team/v0/teams/{course_id}/team_membership_csv`                         | **Staff only.** Returns the current team-membership state as CSV. Useful for syncing our local `Team` state on first load.                                                                            |
 | Course roster (enrollments)                 | `GET`    | `/api/enrollment/v1/enrollments?course_id={course_id}`                       | Lists enrolled users for the course. Use for FR-6.1 (replace CSV roster upload). May be capped by an `active_enrollments` threshold on some instances — verify against the target.                    |
 
