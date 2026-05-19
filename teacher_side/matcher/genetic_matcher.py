@@ -7,7 +7,7 @@ from teacher_side.matcher.encoder import prepare_data
 from teacher_side.matcher.fitness_function import make_fitness_func
 
 
-def match(df, team_template, weights, constraints):
+def match(df, team_template, weights, constraints, on_generation=None, random_seed=None):
     """ 
         Matches students into teams using genetic algorithm
         Args:
@@ -15,6 +15,10 @@ def match(df, team_template, weights, constraints):
             - team_template: TeamTemplate object
             - weights: list of weights for fitness function
             - constraints: dict with team size constraints
+            - on_generation: optional callback invoked by pygad after each
+              generation (used for SSE progress streaming during rematch).
+            - random_seed: optional int for deterministic runs (used for
+              GA regression tests). Same input + same seed => same output.
         Returns:
             - df with team assignments
             - target column name (str) where assignments were added
@@ -56,7 +60,9 @@ def match(df, team_template, weights, constraints):
         crossover_type="single_point",
         mutation_type="random",
         keep_parents=2,
-        stop_criteria=["saturate_50"]
+        stop_criteria=["saturate_50"],
+        on_generation=on_generation,
+        random_seed=random_seed,
     )
 
     ga_instance.run()
