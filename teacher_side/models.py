@@ -92,6 +92,128 @@ class CSVGeneration(models.Model):
         return f"{self.generated_at.strftime('%Y-%m-%d %H:%M')} - {self.student_count} students - {template_name}"
 
 
+class RematchAuditLog(models.Model):
+    """Persistent audit row for every rematch attempt.
+
+    We will later hook this into the rematch flow (claim, rejection, terminal outcome,
+    cleanup) — each in its OWN transaction, so a rolled-back rematch still leaves an
+    audit row behind.
+    """
+
+    OUTCOME_RUNNING = "running"
+    OUTCOME_SUCCESS = "success"
+    OUTCOME_CANCELLED = "cancelled"
+    OUTCOME_ERROR = "error"
+    OUTCOME_WORKER_DIED = "worker_died"
+    OUTCOME_REJECTED = "rejected"  # token claim failed (already_running)
+    OUTCOME_DISCONNECT = "client_disconnect"  # generator closed before terminal event
+    OUTCOME_NOOP = "noop"  # too few unlocked students
+    OUTCOME_CHOICES = [
+        (OUTCOME_RUNNING, "Running"),
+        (OUTCOME_SUCCESS, "Success"),
+        (OUTCOME_CANCELLED, "Cancelled"),
+        (OUTCOME_ERROR, "Error"),
+        (OUTCOME_WORKER_DIED, "Worker died"),
+        (OUTCOME_REJECTED, "Rejected (already running)"),
+        (OUTCOME_DISCONNECT, "Client disconnect"),
+        (OUTCOME_NOOP, "No-op (degraded)"),  # H2
+    ]
+
+    session = models.ForeignKey(
+        "MatchingSession",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rematch_audit_logs",
+    )
+    session_pk_snapshot = models.IntegerField(
+        help_text="MatchingSession PK at row creation; survives session deletion."
+    )
+
+    token = models.CharField(max_length=36, db_index=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
+
+    outcome = models.CharField(
+        max_length=20, choices=OUTCOME_CHOICES, default=OUTCOME_RUNNING, db_index=True
+    )
+    generations_completed = models.IntegerField(default=0)
+    students_moved = models.IntegerField(default=0)
+    teams_created = models.IntegerField(default=0)
+
+    # Snapshot of the input weights used for this rematch (denormalized so the
+    # row stays meaningful even after the session's stored weights mutate).
+    weights_snapshot = models.JSONField(default=dict)
+
+    error_class = models.CharField(max_length=200, blank=True)
+    error_message = models.TextField(blank=True)
+
+    # Operational forensics
+    db_vendor = models.CharField(max_length=20, blank=True)
+    worker_pid = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        indexes = [
+            # "Recent runs for this session" — common admin query
+            models.Index(fields=["session", "-started_at"]),
+            # "All failures since X" — common ops query
+            models.Index(fields=["outcome", "-started_at"]),
+            # "Find this token's row" — used by cleanup path to update outcome
+            models.Index(fields=["token"]),
+        ]
+
+    def __str__(self):
+        return f"rematch[{self.token[:8]}] session={self.session_pk_snapshot} {self.outcome}"
+
+    # Fields `mark_completed` is allowed to mutate. Anything outside this set
+    # is set at row creation, never on completion — passing one to
+    # `mark_completed` is a programmer typo.
+    _MARK_COMPLETED_ALLOWED_FIELDS = frozenset(
+        {
+            "generations_completed",
+            "students_moved",
+            "teams_created",
+            "error_class",
+            "error_message",
+        }
+    )
+
+    def mark_completed(self, outcome, **fields):
+        """Flip a running row to its terminal state. Computes duration_ms
+        from started_at → now. Will be used by the rematch worker's `finally`.
+
+        Raises ValueError if any kwarg is not in `_MARK_COMPLETED_ALLOWED_FIELDS`
+        — prevents silent typo footguns where e.g. `students_move=...` would
+        be set on the instance but never persisted.
+        """
+        bad = set(fields) - self._MARK_COMPLETED_ALLOWED_FIELDS
+        if bad:
+            raise ValueError(
+                f"mark_completed got unsupported kwargs: {sorted(bad)}. "
+                f"Allowed: {sorted(self._MARK_COMPLETED_ALLOWED_FIELDS)}"
+            )
+        now = timezone.now()
+        self.completed_at = now
+        self.duration_ms = int((now - self.started_at).total_seconds() * 1000)
+        self.outcome = outcome
+        for k, v in fields.items():
+            setattr(self, k, v)
+        self.save(
+            update_fields=[
+                "completed_at",
+                "duration_ms",
+                "outcome",
+                "generations_completed",
+                "students_moved",
+                "teams_created",
+                "error_class",
+                "error_message",
+            ]
+        )
+
+
 # class Student(models.Model):
 #     student_id = models.CharField(primary_key=True, max_length=50)
 #     vector = models.TextField()
