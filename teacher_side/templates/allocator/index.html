@@ -216,6 +216,12 @@
         <!-- Current Teams Display -->
         {% if teams %}
         <div class="text-center mb-4">
+            {% if latest_session %}
+            <a href="{% url 'teacher_side:adjust_teams' latest_session.id %}"
+               class="btn btn-gradient text-white btn-lg px-5 py-3 fw-bold me-2">
+                <i class="bi bi-pencil-square me-2"></i>Adjust Teams
+            </a>
+            {% endif %}
             <a href="{% url 'teacher_side:download_csv' %}" class="btn btn-gradient-success text-white btn-lg px-5 py-3 fw-bold">
                 <i class="bi bi-download me-2"></i>Download Current CSV
             </a>

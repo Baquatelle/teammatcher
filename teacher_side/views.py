@@ -121,10 +121,14 @@ def index(request):
 
     historical_generations = CSVGeneration.objects.order_by('-id')[:5] # ordered to get the most recent
 
+    # Get the current session (there is at most one) to show the "Adjust Teams" link.
+    latest_session = MatchingSession.objects.first()
+
     return render(request, 'allocator/index.html', {
         'form': form,
         'teams': teams,
-        'historical_generations': historical_generations
+        'historical_generations': historical_generations,
+        'latest_session': latest_session
     })
 
 
