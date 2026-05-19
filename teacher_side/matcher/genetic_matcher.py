@@ -94,5 +94,6 @@ def match(df, team_template, weights, constraints):
     else: # creates new column 'teams'
         print("No empty column found after 'mode'. Creating 'teams' column.")
         df['teams'] = team_assignments
+        target_col = 'teams'
 
     return df, target_col, best_fitness
