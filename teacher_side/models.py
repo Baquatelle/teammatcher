@@ -186,6 +186,71 @@ class Team(models.Model):
         return f"{self.name}{lock} (session #{self.session_id})"
 
 
+class TeamMembership(models.Model):
+    """One student's placement within a MatchingSession.
+
+    `session` is the scoping authority — every membership belongs to exactly
+    one MatchingSession, and is destroyed with it (CASCADE).
+
+    `team` is nullable: a membership with `team=None` is in the unassigned pool.
+    Locking a Team does NOT lock its members; per-student locks are independent
+    of per-team locks.
+
+    `original_row` is the snapshot of the student's CSV row at session-creation
+    time (string-coerced for jsonb determinism). The export step rebuilds the
+    output CSV from these snapshots, overwriting only the target_col with the
+    (possibly hand-adjusted) team name. This insulates export from later edits
+    to StudentProfile.
+
+    `profile` is a soft link to StudentProfile (matched by username at
+    session-creation time) that survives profile deletion via SET_NULL. It will
+    be used to display rich student detail (availability, etc.) on hover/click —
+    but the export path never reads through it.
+
+    `is_locked` pins this student to their current team: rejects drag moves and
+    excludes the membership from the re-match subset.
+    """
+
+    session = models.ForeignKey(
+        MatchingSession,
+        on_delete=models.CASCADE,
+        related_name="memberships",
+    )
+    team = models.ForeignKey(
+        Team,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="memberships",
+        help_text="Null = unassigned pool.",
+    )
+    username = models.CharField(max_length=200)
+    original_row = models.JSONField(
+        help_text="Snapshot of all CSV columns at session creation, string-coerced.",
+    )
+    profile = models.ForeignKey(
+        "student_side.StudentProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="team_memberships",
+        help_text="Soft link by username; survives profile deletion.",
+    )
+    is_locked = models.BooleanField(
+        default=False,
+        help_text="Locked memberships reject moves and are excluded from re-match.",
+    )
+
+    class Meta:
+        unique_together = [("session", "username")]
+        ordering = ["username"]  # No JOIN; views/admin can re-sort as needed.
+
+    def __str__(self):
+        lock = " [locked]" if self.is_locked else ""
+        team_name = self.team.name if self.team_id else "(unassigned)"
+        return f"{self.username} \u2192 {team_name}{lock}"
+
+
 class RematchAuditLog(models.Model):
     """Persistent audit row for every rematch attempt.
 
