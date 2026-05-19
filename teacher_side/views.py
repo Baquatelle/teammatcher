@@ -66,6 +66,7 @@ def index(request):
     })
 
 
+@staff_member_required
 def download_csv(request):
     results = request.session.get('results', [])
     if not results:
@@ -93,6 +94,7 @@ def download_csv(request):
     return response
 
 
+@staff_member_required
 def download_historical_csv(request, generation_id):
     generation = get_object_or_404(CSVGeneration, id=generation_id)
     response = HttpResponse(
