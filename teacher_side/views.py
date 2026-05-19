@@ -1,12 +1,15 @@
 import csv
 import io
+import json
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.http import require_POST
 import pandas as pd
 
 from teacher_side.matcher.genetic_matcher import match
@@ -208,3 +211,39 @@ def adjust_teams(request, session_id):
             "violation_count": len(violations),
         },
     )
+
+
+@staff_member_required
+@require_POST
+def api_move_student(request, session_id):
+    session = get_object_or_404(MatchingSession, pk=session_id)
+    try:
+        body = json.loads(request.body)
+        membership_id = int(body["membership_id"])
+        team_id = body.get("team_id")  # None means unassigned
+    except (KeyError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"ok": False, "error": "invalid_input"}, status=400)
+
+    membership = get_object_or_404(TeamMembership, pk=membership_id, session=session)
+
+    if membership.is_locked:
+        return JsonResponse({"ok": False, "error": "student_locked"}, status=403)
+    if membership.team and membership.team.is_locked:
+        return JsonResponse({"ok": False, "error": "source_team_locked"}, status=403)
+
+    target_team = None
+    if team_id is not None:
+        target_team = get_object_or_404(Team, pk=int(team_id), session=session)
+        if target_team.is_locked:
+            return JsonResponse(
+                {"ok": False, "error": "target_team_locked"}, status=403
+            )
+
+    old_team = membership.team
+    membership.team = target_team
+    membership.save(update_fields=["team"])
+
+    from_count = old_team.memberships.count() if old_team else 0
+    to_count = target_team.memberships.count() if target_team else 0
+
+    return JsonResponse({"ok": True, "from_count": from_count, "to_count": to_count})
