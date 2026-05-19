@@ -247,3 +247,23 @@ def api_move_student(request, session_id):
     to_count = target_team.memberships.count() if target_team else 0
 
     return JsonResponse({"ok": True, "from_count": from_count, "to_count": to_count})
+
+
+@staff_member_required
+@require_POST
+def api_toggle_team_lock(request, session_id, team_id):
+    session = get_object_or_404(MatchingSession, pk=session_id)
+    team = get_object_or_404(Team, pk=team_id, session=session)
+    team.is_locked = not team.is_locked
+    team.save(update_fields=["is_locked"])
+    return JsonResponse({"locked": team.is_locked})
+
+
+@staff_member_required
+@require_POST
+def api_toggle_student_lock(request, session_id, membership_id):
+    session = get_object_or_404(MatchingSession, pk=session_id)
+    membership = get_object_or_404(TeamMembership, pk=membership_id, session=session)
+    membership.is_locked = not membership.is_locked
+    membership.save(update_fields=["is_locked"])
+    return JsonResponse({"locked": membership.is_locked})
