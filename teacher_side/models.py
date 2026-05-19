@@ -49,7 +49,7 @@ class TeamNameTemplate(models.Model):
         super().save(*args, **kwargs)
 
 
-class CSVGenerationManager(models.Manager):
+class CSVGenerationManager(models.Manager["CSVGeneration"]):
     def create_generation(self, csv_data, team_size, template_used, student_count):
         generation = self.create(
             csv_data=csv_data,
@@ -80,7 +80,7 @@ class CSVGeneration(models.Model):
     generated_at = models.DateTimeField(default=timezone.now)
     student_count = models.IntegerField(help_text="Total number of students")
 
-    objects = CSVGenerationManager()
+    objects: CSVGenerationManager = CSVGenerationManager()
 
     class Meta:
         ordering = ['-generated_at']
