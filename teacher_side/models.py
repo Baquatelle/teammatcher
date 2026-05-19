@@ -92,6 +92,70 @@ class CSVGeneration(models.Model):
         return f"{self.generated_at.strftime('%Y-%m-%d %H:%M')} - {self.student_count} students - {template_name}"
 
 
+class MatchingSession(models.Model):
+    """One complete matching run: the original CSV, the GA's settings, and the
+    coordination state for in-flight rematches. A `MatchingSession` owns its
+    `Team` and `TeamMembership` rows via reverse FKs (cascading delete).
+
+    Per the single-active-session policy, the application keeps at most one
+    row in this table at a time; a new Generate clobbers any prior session
+    via `MatchingSession.objects.all().delete()`.
+    """
+
+    original_csv = models.TextField(
+        help_text="Verbatim CSV uploaded for this session (audit + replay)."
+    )
+    min_size = models.IntegerField(help_text="Minimum allowed team size.")
+    max_size = models.IntegerField(help_text="Maximum allowed team size.")
+
+    # `weights` stores the named dict form, e.g. {"availability": 10, ...}.
+    # Use `weights_to_list(session.weights)` (defined at module top) to convert
+    # to the canonical ordered list the GA's fitness function consumes.
+    weights = models.JSONField(
+        help_text="Named-dict form of the fitness weights; see WEIGHT_KEYS for canonical order."
+    )
+    target_col = models.CharField(
+        max_length=50,
+        default="teams",
+        help_text="Column name in the CSV where team labels are written.",
+    )
+
+    # PostgreSQL `jsonb` does not preserve key insertion order, so we cannot
+    # rely on `TeamMembership.original_row.keys()` for deterministic CSV export.
+    # Storing the canonical column list separately keeps export output stable
+    # across DB backends (sqlite, postgres jsonb, etc.).
+    column_order = models.JSONField(
+        default=list,
+        help_text="Canonical CSV column order; jsonb-safe alternative to dict key order.",
+    )
+    template_used = models.ForeignKey(
+        TeamNameTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Team name template used for this session, if any.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # `rematch_token` is set when a rematch claims the session and cleared in
+    # the worker's `finally`. Non-null means "a rematch is in flight"; the
+    # claim path uses an atomic `filter(rematch_token=None).update(rematch_token=...)`
+    # to reject double-clicks / reconnects with HTTP 409 already_running.
+    rematch_token = models.CharField(
+        max_length=36, null=True, blank=True, db_index=True
+    )
+    rematch_started_at = models.DateTimeField(null=True, blank=True)
+    # Flipped by the cancel endpoint. The GA's `on_generation` callback re-reads
+    # this field each generation and returns 'stop' to halt PyGAD early.
+    rematch_cancel_requested = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"MatchingSession #{self.pk} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
 class RematchAuditLog(models.Model):
     """Persistent audit row for every rematch attempt.
 
