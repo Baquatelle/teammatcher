@@ -2,6 +2,29 @@ from django.db import models
 from django.utils import timezone
 
 
+# === Canonical weights ordering ============================================
+# This list MUST match the unpacking order in
+# `teacher_side/matcher/fitness_function.py::make_fitness_func` and the
+# return order of `teacher_side/matcher/utils.py::get_weights`. Reordering
+# here without updating those two sites will silently misapply weights to
+# wrong criteria with no exception thrown. `WeightsOrderingTest` guards
+# against drift.
+#
+# NOTE: `job` comes before `education` here. The form field labels read
+# left-to-right as Education, Professional, but the GA's tuple unpacking
+# is `w_avail, w_commit, w_job, w_edu, ...`.
+WEIGHT_KEYS = [
+    'availability', 'commitment', 'job', 'education',
+    'age', 'gender', 'experience', 'lead', 'tasks',
+]
+
+
+def weights_to_list(d):
+    """Convert a {key: weight} dict to the canonical ordered list the GA
+    fitness function consumes. Missing keys default to 0."""
+    return [d.get(k, 0) for k in WEIGHT_KEYS]
+
+
 class TeamNameTemplate(models.Model):
     name = models.CharField(max_length=100, help_text="Template name (e.g., 'Marvel Heroes')")
     team_names = models.JSONField(
