@@ -3,6 +3,7 @@ import io
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse
 from django.urls import reverse
@@ -172,3 +173,38 @@ def download_historical_csv(request, generation_id):
     )
     response.write(generation.csv_data)
     return response
+
+
+@staff_member_required
+def adjust_teams(request, session_id):
+    session = get_object_or_404(MatchingSession, pk=session_id)
+    teams = list(
+        session.teams.annotate(member_count=Count("memberships"))
+        .prefetch_related("memberships__profile")
+        .order_by("name")
+    )
+
+    # Sort teams so "Team 2" comes before "Team 10" (not alphabetic order).
+    def _natural_key(team):
+        last = team.name.rsplit(" ", 1)[-1] if " " in team.name else team.name
+        if last.isdigit():
+            return (0, int(last), team.name)
+        return (1, team.name.lower(), team.name)
+
+    teams.sort(key=_natural_key)
+    unassigned = session.memberships.filter(team=None).select_related("profile")
+    violations = [
+        t for t in teams if not (session.min_size <= t.member_count <= session.max_size)
+    ]
+
+    return render(
+        request,
+        "allocator/adjust.html",
+        {
+            "session": session,
+            "teams": teams,
+            "unassigned": unassigned,
+            "violations": violations,
+            "violation_count": len(violations),
+        },
+    )
