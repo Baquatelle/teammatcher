@@ -8,6 +8,7 @@ from django.db.models import Count
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponse, JsonResponse
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 import pandas as pd
@@ -267,3 +268,88 @@ def api_toggle_student_lock(request, session_id, membership_id):
     membership.is_locked = not membership.is_locked
     membership.save(update_fields=["is_locked"])
     return JsonResponse({"locked": membership.is_locked})
+
+
+@staff_member_required
+@require_POST
+def export_csv(request, session_id):
+    session = get_object_or_404(MatchingSession, pk=session_id)
+
+    # Violation check
+    try:
+        body = json.loads(request.body) if request.body else {}
+        confirmed = body.get("confirmed", False)
+    except json.JSONDecodeError:
+        confirmed = False
+
+    if not confirmed:
+        teams = session.teams.annotate(member_count=Count("memberships"))
+        violations = [
+            {
+                "name": t.name,
+                "count": t.member_count,
+                "min": session.min_size,
+                "max": session.max_size,
+            }
+            for t in teams
+            if not (session.min_size <= t.member_count <= session.max_size)
+        ]
+        if violations:
+            return JsonResponse({"violations": violations}, status=409)
+
+    # Build CSV from original rows
+    memberships = session.memberships.select_related("team").order_by("id")
+    if not memberships.exists():
+        return JsonResponse({"error": "no_students"}, status=400)
+
+    # Use canonical column order from session
+    columns = (
+        list(session.column_order)
+        if session.column_order
+        else list(memberships.first().original_row.keys())
+    )
+    target_col = session.target_col
+    if target_col not in columns:
+        columns.append(target_col)
+
+    # Prevent CSV injection: if a cell starts with =, +, -, or @, prepend an apostrophe.
+    # Excel/Google Sheets then treats it as plain text instead of a formula.
+    # Reference: https://owasp.org/www-community/attacks/CSV_Injection
+    DANGEROUS_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+    def sanitize_cell(val):
+        s = "" if val is None else str(val)
+        # Check stripped value for dangerous prefix, but keep original spacing in output.
+        stripped = s.lstrip()
+        if stripped and stripped[0] in DANGEROUS_PREFIXES:
+            return "'" + s
+        return s
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for m in memberships:
+        row = dict(m.original_row)
+        row[target_col] = m.team.name if m.team else ""
+        row = {col: sanitize_cell(row.get(col, "")) for col in columns}
+        writer.writerow(row)
+
+    csv_text = output.getvalue()
+
+    # Create audit record
+    CSVGeneration.objects.create_generation(
+        csv_data=csv_text,
+        team_size=int((session.min_size + session.max_size) / 2),
+        template_used=session.template_used,
+        student_count=memberships.count(),
+    )
+
+    timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+    response = HttpResponse(
+        csv_text,
+        content_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="teams_{timestamp}.csv"'
+        },
+    )
+    return response
