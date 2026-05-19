@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import TeamNameTemplate, CSVGeneration
+from .models import TeamNameTemplate, CSVGeneration, RematchAuditLog
 
 
 @admin.register(TeamNameTemplate)
