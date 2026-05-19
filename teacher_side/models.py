@@ -156,6 +156,36 @@ class MatchingSession(models.Model):
         return f"MatchingSession #{self.pk} ({self.created_at:%Y-%m-%d %H:%M})"
 
 
+class Team(models.Model):
+    """A single team within a `MatchingSession`.
+
+    Teams are scoped to their session (cascade-deleted with it) and uniquely
+    named within that scope. The `is_locked` flag freezes membership: a locked
+    team rejects move-in/move-out attempts in the adjustment API and is
+    excluded from the unlocked-subset re-match.
+    """
+
+    session = models.ForeignKey(
+        MatchingSession,
+        on_delete=models.CASCADE,
+        related_name="teams",
+    )
+    name = models.CharField(max_length=100)
+    is_locked = models.BooleanField(
+        default=False,
+        help_text="When True, membership is frozen: moves in/out are rejected and the team is excluded from re-match.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("session", "name")]
+        ordering = ["name"]
+
+    def __str__(self):
+        lock = " [locked]" if self.is_locked else ""
+        return f"{self.name}{lock} (session #{self.session_id})"
+
+
 class RematchAuditLog(models.Model):
     """Persistent audit row for every rematch attempt.
 
