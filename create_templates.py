@@ -1,4 +1,8 @@
+import logging
+
 from teacher_side.models import TeamNameTemplate
+
+logger = logging.getLogger("teacher_side.bootstrap")
 
 marvel_template = TeamNameTemplate.objects.create(
     name="Marvel Heroes",
@@ -11,7 +15,10 @@ marvel_template = TeamNameTemplate.objects.create(
     ],
     is_default=True
 )
-print(f"Created: {marvel_template}")
+logger.info(
+    "bootstrap.template.created",
+    extra={"template_name": str(marvel_template), "is_default": True},
+)
 
 greek_template = TeamNameTemplate.objects.create(
     name="Greek Gods",
@@ -23,7 +30,10 @@ greek_template = TeamNameTemplate.objects.create(
         "Artemis"
     ]
 )
-print(f"Created: {greek_template}")
+logger.info(
+    "bootstrap.template.created",
+    extra={"template_name": str(greek_template), "is_default": False},
+)
 
 color_template = TeamNameTemplate.objects.create(
     name="Color Teams",
@@ -35,7 +45,12 @@ color_template = TeamNameTemplate.objects.create(
         "Purple Warriors"
     ]
 )
-print(f"Created: {color_template}")
+logger.info(
+    "bootstrap.template.created",
+    extra={"template_name": str(color_template), "is_default": False},
+)
 
-print("\nAll templates created successfully!")
-print(f"Total templates: {TeamNameTemplate.objects.count()}")
+logger.info(
+    "bootstrap.complete",
+    extra={"total_templates": TeamNameTemplate.objects.count()},
+)

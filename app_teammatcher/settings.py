@@ -140,6 +140,11 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+        "teacher_side.bootstrap": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
         # Keep Django's noisy default loggers at WARNING
         "django": {"handlers": ["console"], "level": "WARNING", "propagate": False},
     },

@@ -159,7 +159,10 @@ def _run_rematch(session, weights, on_generation=None, cancel_event=None, stats=
         return None
 
     constraints = {"min_size": session.min_size, "max_size": session.max_size}
-    logger.info("rematch.ga.start session=%s n_students=%s", session.pk, len(unlocked))
+    logger.info(
+        "rematch.ga.start",
+        extra={"session_id": session.pk, "n_students": len(unlocked)},
+    )
     result_df, result_col, _ = match(
         df_subset,
         session.template_used,
@@ -167,11 +170,14 @@ def _run_rematch(session, weights, on_generation=None, cancel_event=None, stats=
         constraints,
         on_generation=_wrapped_on_generation,
     )
-    logger.info("rematch.ga.done session=%s", session.pk)
+    logger.info("rematch.ga.done", extra={"session_id": session.pk})
 
     # If the user cancelled, do not commit. The GA result is discarded.
     if cancel_event is not None and cancel_event.is_set():
-        logger.info("rematch.cancelled session=%s — skipping commit", session.pk)
+        logger.info(
+            "rematch.cancelled",
+            extra={"session_id": session.pk, "reason": "skipping_commit"},
+        )
         return
 
     with transaction.atomic():
@@ -257,7 +263,7 @@ def index(request):
 
             # group
             df_result, target_col, best_fitness = match(df, team_template, weights, constraints)
-            print("Best fitness:", best_fitness)
+            logger.info("match.complete", extra={"best_fitness": float(best_fitness)})
 
             # Save the matching results. Only one session exists at a time:
             # creating a new one deletes the previous one and all its teams.
@@ -327,7 +333,10 @@ def index(request):
             # Redirect to the adjustment view.
             return redirect(reverse("teacher_side:adjust_teams", args=[session.id]))
         else:
-            print(form.errors)
+            logger.warning(
+                "upload_form.invalid",
+                extra={"errors": form.errors.get_json_data()},
+            )
     else:
         form = UploadFileForm()
         if 'results' in request.session:
@@ -662,7 +671,7 @@ def rematch_start(request, session_id):
             stats["error_class"] = type(exc).__name__
             stats["error_message"] = str(exc)
             err = str(exc)[:200]
-            logger.exception("rematch.thread.error session=%s", session.pk)
+            logger.exception("rematch.thread.error", extra={"session_id": session.pk})
         finally:
             try:
                 progress_q.put(("done", outcome, err, stats.copy()))
