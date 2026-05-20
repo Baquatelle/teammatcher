@@ -10,7 +10,7 @@ def calculate_availability_score(team_matrix, current_n):
     """
     Calculates the availability score for a team based on overlapping free slots.
     5 common slots = perfect score (1.0)
-    
+
     Args:
         - team_matrix (np.ndarray): matrix of team members' availability (first 21 columns)
         - current_n (int): number of members in the team
@@ -25,7 +25,7 @@ def calculate_availability_score(team_matrix, current_n):
     team_overlaps = np.sum(avail_matrix, axis=0)
     perfect_slots = np.sum(team_overlaps == current_n)
 
-    return min(perfect_slots / 5.0, 1.0)
+    return min(float(perfect_slots / 5.0), 1.0)
 
 def calculate_tasks_score(team_matrix, n_tasks, tasks_start, tasks_end):
     """
@@ -38,14 +38,15 @@ def calculate_tasks_score(team_matrix, n_tasks, tasks_start, tasks_end):
     Returns:
         - float: tasks coverage score between 0.0 and 1.0
     """
-    if n_tasks == 0:
+    current_n = team_matrix.shape[0]
+    if current_n <= 1 or n_tasks == 0:
         return 0.0
 
     tasks_matrix = team_matrix[:, tasks_start:tasks_end]
     votes_per_task = np.sum(tasks_matrix, axis=0)
     max_agreement = np.max(votes_per_task)
-    
-    return max_agreement / current_n
+
+    return float(max_agreement / current_n)
 
 
 # Reference: "Homogeneity versus Heterogeneity in Team Formation" (ResearchGate, 2018).
