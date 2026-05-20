@@ -102,4 +102,45 @@ STATICFILES_DIRS = [
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-TEACHER_PASSWORD = "changeme123"    
+TEACHER_PASSWORD = "changeme123"
+
+# Set DJANGO_JSON_LOGS=1 in production for structured JSON output.
+# Defaults to plain text for easier reading during development.
+
+_JSON_LOGS = os.environ.get("DJANGO_JSON_LOGS", "").lower() in ("1", "true", "yes")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            # Fields passed in extra={} appear as top-level JSON keys.
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+        "plain": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s  %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json" if _JSON_LOGS else "plain",
+        },
+    },
+    "loggers": {
+        # Log rematch events at INFO level
+        "teacher_side.views": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "teacher_side.matcher": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        # Keep Django's noisy default loggers at WARNING
+        "django": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}
