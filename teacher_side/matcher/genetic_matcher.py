@@ -3,6 +3,8 @@
 import math
 import pygad
 
+NUM_GENERATIONS = 200
+
 from teacher_side.matcher.encoder import prepare_data
 from teacher_side.matcher.fitness_function import make_fitness_func
 
@@ -50,7 +52,7 @@ def match(df, team_template, weights, constraints, on_generation=None, random_se
     gene_space = list(range(n_teams))
 
     ga_instance = pygad.GA(
-        num_generations=200,
+        num_generations=NUM_GENERATIONS,
         num_parents_mating=20,
         fitness_func=fitness_func,
         sol_per_pop=40,
