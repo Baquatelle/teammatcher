@@ -2,17 +2,11 @@ from django.db import models
 from django.utils import timezone
 
 
-# === Canonical weights ordering ============================================
-# This list MUST match the unpacking order in
-# `teacher_side/matcher/fitness_function.py::make_fitness_func` and the
-# return order of `teacher_side/matcher/utils.py::get_weights`. Reordering
-# here without updating those two sites will silently misapply weights to
-# wrong criteria with no exception thrown. `WeightsOrderingTest` guards
-# against drift.
+# The order here must match what the GA fitness function expects.
+# Both get_weights() and weights_to_list() rely on this list to produce
+# weights in the correct order. Do not reorder without also updating fitness_function.py.
 #
-# NOTE: `job` comes before `education` here. The form field labels read
-# left-to-right as Education, Professional, but the GA's tuple unpacking
-# is `w_avail, w_commit, w_job, w_edu, ...`.
+# Note: 'job' comes before 'education' even though the form shows Education first.
 WEIGHT_KEYS = [
     'availability', 'commitment', 'job', 'education',
     'age', 'gender', 'experience', 'lead', 'tasks',
@@ -20,8 +14,8 @@ WEIGHT_KEYS = [
 
 
 def weights_to_list(d):
-    """Convert a {key: weight} dict to the canonical ordered list the GA
-    fitness function consumes. Missing keys default to 0."""
+    """Convert a {key: weight} dict to an ordered list for the GA fitness function.
+    Missing keys default to 0."""
     return [d.get(k, 0) for k in WEIGHT_KEYS]
 
 
@@ -93,13 +87,12 @@ class CSVGeneration(models.Model):
 
 
 class MatchingSession(models.Model):
-    """One complete matching run: the original CSV, the GA's settings, and the
-    coordination state for in-flight rematches. A `MatchingSession` owns its
-    `Team` and `TeamMembership` rows via reverse FKs (cascading delete).
+    """Stores one complete run of the team matching algorithm.
 
-    Per the single-active-session policy, the application keeps at most one
-    row in this table at a time; a new Generate clobbers any prior session
-    via `MatchingSession.objects.all().delete()`.
+    Holds the uploaded CSV, the GA settings used, and the current rematch status.
+    Deleting a MatchingSession also deletes all its Teams and TeamMemberships.
+
+    Only one MatchingSession exists at a time — creating a new one deletes the old one.
     """
 
     original_csv = models.TextField(
@@ -108,9 +101,8 @@ class MatchingSession(models.Model):
     min_size = models.IntegerField(help_text="Minimum allowed team size.")
     max_size = models.IntegerField(help_text="Maximum allowed team size.")
 
-    # `weights` stores the named dict form, e.g. {"availability": 10, ...}.
-    # Use `weights_to_list(session.weights)` (defined at module top) to convert
-    # to the canonical ordered list the GA's fitness function consumes.
+    # weights is stored as a dict, e.g. {"availability": 10, ...}.
+    # Call weights_to_list(session.weights) to convert it to the ordered list the GA needs.
     weights = models.JSONField(
         help_text="Named-dict form of the fitness weights; see WEIGHT_KEYS for canonical order."
     )
@@ -120,10 +112,8 @@ class MatchingSession(models.Model):
         help_text="Column name in the CSV where team labels are written.",
     )
 
-    # PostgreSQL `jsonb` does not preserve key insertion order, so we cannot
-    # rely on `TeamMembership.original_row.keys()` for deterministic CSV export.
-    # Storing the canonical column list separately keeps export output stable
-    # across DB backends (sqlite, postgres jsonb, etc.).
+    # PostgreSQL does not guarantee dict key order, so we store the column order
+    # separately to ensure CSV export is consistent regardless of the database used.
     column_order = models.JSONField(
         default=list,
         help_text="Canonical CSV column order; jsonb-safe alternative to dict key order.",
@@ -137,16 +127,15 @@ class MatchingSession(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
-    # `rematch_token` is set when a rematch claims the session and cleared in
-    # the worker's `finally`. Non-null means "a rematch is in flight"; the
-    # claim path uses an atomic `filter(rematch_token=None).update(rematch_token=...)`
-    # to reject double-clicks / reconnects with HTTP 409 already_running.
+    # Set when a rematch starts, cleared when it finishes.
+    # If not null, a rematch is currently running.
+    # Uses an atomic update to prevent two rematches from starting at the same time.
     rematch_token = models.CharField(
         max_length=36, null=True, blank=True, db_index=True
     )
     rematch_started_at = models.DateTimeField(null=True, blank=True)
-    # Flipped by the cancel endpoint. The GA's `on_generation` callback re-reads
-    # this field each generation and returns 'stop' to halt PyGAD early.
+    # Set to True by the cancel endpoint. The GA checks this after each generation
+    # and stops early if it is True.
     rematch_cancel_requested = models.BooleanField(default=False)
 
     class Meta:
@@ -157,12 +146,11 @@ class MatchingSession(models.Model):
 
 
 class Team(models.Model):
-    """A single team within a `MatchingSession`.
+    """A team within a MatchingSession.
 
-    Teams are scoped to their session (cascade-deleted with it) and uniquely
-    named within that scope. The `is_locked` flag freezes membership: a locked
-    team rejects move-in/move-out attempts in the adjustment API and is
-    excluded from the unlocked-subset re-match.
+    Deleted automatically when its session is deleted.
+    When is_locked is True, students cannot be moved in or out,
+    and the team is skipped during re-matching.
     """
 
     session = models.ForeignKey(
@@ -187,28 +175,17 @@ class Team(models.Model):
 
 
 class TeamMembership(models.Model):
-    """One student's placement within a MatchingSession.
+    """Records which team a student belongs to within a MatchingSession.
 
-    `session` is the scoping authority — every membership belongs to exactly
-    one MatchingSession, and is destroyed with it (CASCADE).
+    team=None means the student has not been assigned to a team yet.
+    Locking a team does not automatically lock its members — each student has their own lock.
 
-    `team` is nullable: a membership with `team=None` is in the unassigned pool.
-    Locking a Team does NOT lock its members; per-student locks are independent
-    of per-team locks.
+    original_row stores the student's CSV data at the time the session was created.
+    The export uses this snapshot to rebuild the CSV, so changes to the student's
+    profile after matching don't affect the exported results.
 
-    `original_row` is the snapshot of the student's CSV row at session-creation
-    time (string-coerced for jsonb determinism). The export step rebuilds the
-    output CSV from these snapshots, overwriting only the target_col with the
-    (possibly hand-adjusted) team name. This insulates export from later edits
-    to StudentProfile.
-
-    `profile` is a soft link to StudentProfile (matched by username at
-    session-creation time) that survives profile deletion via SET_NULL. It will
-    be used to display rich student detail (availability, etc.) on hover/click —
-    but the export path never reads through it.
-
-    `is_locked` pins this student to their current team: rejects drag moves and
-    excludes the membership from the re-match subset.
+    profile links to the student's profile but is optional — the export never reads it.
+    is_locked prevents this student from being moved or included in re-matching.
     """
 
     session = models.ForeignKey(
@@ -243,7 +220,7 @@ class TeamMembership(models.Model):
 
     class Meta:
         unique_together = [("session", "username")]
-        ordering = ["username"]  # No JOIN; views/admin can re-sort as needed.
+        ordering = ["username"]
 
     def __str__(self):
         lock = " [locked]" if self.is_locked else ""
@@ -252,11 +229,10 @@ class TeamMembership(models.Model):
 
 
 class RematchAuditLog(models.Model):
-    """Persistent audit row for every rematch attempt.
+    """Records every rematch attempt for auditing purposes.
 
-    We will later hook this into the rematch flow (claim, rejection, terminal outcome,
-    cleanup) — each in its OWN transaction, so a rolled-back rematch still leaves an
-    audit row behind.
+    Each row is written by the rematch worker. Rows are never deleted —
+    they serve as a permanent log of what happened and when.
     """
 
     OUTCOME_RUNNING = "running"
@@ -264,9 +240,9 @@ class RematchAuditLog(models.Model):
     OUTCOME_CANCELLED = "cancelled"
     OUTCOME_ERROR = "error"
     OUTCOME_WORKER_DIED = "worker_died"
-    OUTCOME_REJECTED = "rejected"  # token claim failed (already_running)
-    OUTCOME_DISCONNECT = "client_disconnect"  # generator closed before terminal event
-    OUTCOME_NOOP = "noop"  # too few unlocked students
+    OUTCOME_REJECTED = "rejected"  # a rematch was already running
+    OUTCOME_DISCONNECT = "client_disconnect"  # browser disconnected before rematch finished
+    OUTCOME_NOOP = "noop"  # too few unlocked students to run
     OUTCOME_CHOICES = [
         (OUTCOME_RUNNING, "Running"),
         (OUTCOME_SUCCESS, "Success"),
@@ -275,7 +251,7 @@ class RematchAuditLog(models.Model):
         (OUTCOME_WORKER_DIED, "Worker died"),
         (OUTCOME_REJECTED, "Rejected (already running)"),
         (OUTCOME_DISCONNECT, "Client disconnect"),
-        (OUTCOME_NOOP, "No-op (degraded)"),  # H2
+        (OUTCOME_NOOP, "No-op (degraded)"),
     ]
 
     session = models.ForeignKey(
@@ -301,8 +277,8 @@ class RematchAuditLog(models.Model):
     students_moved = models.IntegerField(default=0)
     teams_created = models.IntegerField(default=0)
 
-    # Snapshot of the input weights used for this rematch (denormalized so the
-    # row stays meaningful even after the session's stored weights mutate).
+    # A copy of the weights used for this rematch, saved here so the record
+    # stays meaningful even if the session's weights are changed later.
     weights_snapshot = models.JSONField(default=dict)
 
     error_class = models.CharField(max_length=200, blank=True)
@@ -326,9 +302,8 @@ class RematchAuditLog(models.Model):
     def __str__(self):
         return f"rematch[{self.token[:8]}] session={self.session_pk_snapshot} {self.outcome}"
 
-    # Fields `mark_completed` is allowed to mutate. Anything outside this set
-    # is set at row creation, never on completion — passing one to
-    # `mark_completed` is a programmer typo.
+    # Only these fields may be updated when a rematch finishes.
+    # All other fields are set at row creation and must not change.
     _MARK_COMPLETED_ALLOWED_FIELDS = frozenset(
         {
             "generations_completed",
@@ -340,12 +315,10 @@ class RematchAuditLog(models.Model):
     )
 
     def mark_completed(self, outcome, **fields):
-        """Flip a running row to its terminal state. Computes duration_ms
-        from started_at → now. Will be used by the rematch worker's `finally`.
+        """Mark this rematch as finished, recording the outcome and how long it took.
 
-        Raises ValueError if any kwarg is not in `_MARK_COMPLETED_ALLOWED_FIELDS`
-        — prevents silent typo footguns where e.g. `students_move=...` would
-        be set on the instance but never persisted.
+        Raises ValueError for unexpected field names — this catches typos
+        like students_move= that would otherwise silently do nothing.
         """
         bad = set(fields) - self._MARK_COMPLETED_ALLOWED_FIELDS
         if bad:

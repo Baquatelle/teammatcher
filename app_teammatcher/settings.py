@@ -104,9 +104,8 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 TEACHER_PASSWORD = "changeme123"
 
-# === Structured JSON logging =================================================================
-# Toggle JSON output by setting DJANGO_JSON_LOGS=1 in production;
-# in development the unset/false default gives human-readable console output.
+# Set DJANGO_JSON_LOGS=1 in production for structured JSON output.
+# Defaults to plain text for easier reading during development.
 
 _JSON_LOGS = os.environ.get("DJANGO_JSON_LOGS", "").lower() in ("1", "true", "yes")
 
@@ -115,8 +114,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "json": {
-            # python-json-logger; every key in extra={} becomes a top-level
-            # JSON field, so `jq '.session_id'` works directly on the stream.
+            # Fields passed in extra={} appear as top-level JSON keys.
             "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
             "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
         },
@@ -131,7 +129,7 @@ LOGGING = {
         },
     },
     "loggers": {
-        # Project loggers — INFO so rematch lifecycle events land
+        # Log rematch events at INFO level
         "teacher_side.views": {
             "handlers": ["console"],
             "level": "INFO",
