@@ -96,6 +96,10 @@ Before processing, raw student data is converted into a numerical matrix:
     # execute server
     python manage.py runserver
 
+    # If deploying with gunicorn, use a single process with multiple threads.
+    # The rematch SSE feature uses in-process memory queues that are not shared across workers.
+    # gunicorn app_teammatcher.wsgi:application --worker-class=gthread --workers=1 --threads=8 --timeout=120
+
 ## 6. User guide:
 
 ### Teacher:
