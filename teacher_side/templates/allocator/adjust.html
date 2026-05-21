@@ -1,0 +1,576 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Adjust Teams — Team Matcher</title>
+  <!-- Bootstrap 5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <!-- App CSS -->
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <style>
+    body { padding: 0; }
+  </style>
+</head>
+<body>
+{% csrf_token %}
+
+<!-- ── Sticky toolbar ────────────────────────────────────────────── -->
+<div class="adjust-toolbar">
+  <a href="{% url 'teacher_side:index' %}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back
+  </a>
+  <span class="fw-bold text-light me-auto" style="font-size:0.9375rem">
+    <i class="bi bi-people-fill me-2 text-secondary"></i>Adjust Teams
+  </span>
+
+  {% if violation_count %}
+  <span class="badge-violation">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    {{ violation_count }} violation{{ violation_count|pluralize }}
+  </span>
+  {% endif %}
+
+  <button type="button" class="btn btn-sm btn-outline-info"
+          data-bs-toggle="modal" data-bs-target="#rematchModal">
+    <i class="bi bi-arrow-repeat me-1"></i>Re-match
+  </button>
+
+  <button type="button" class="btn btn-sm btn-gradient-success text-white" id="downloadBtn">
+    <i class="bi bi-download me-1"></i>Download CSV
+  </button>
+</div>
+
+<!-- ── Teams horizontal scroll area ─────────────────────────────── -->
+<div class="teams-scroll-wrapper" id="teamsScrollWrapper">
+  <div class="teams-wrapper" id="teamsWrapper">
+    {% for team in teams %}
+    <div class="team-column{% if team in violations %} violation{% endif %}{% if team.is_locked %} is-locked{% endif %}"
+         data-team-id="{{ team.id }}">
+
+      <!-- Column header -->
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div class="d-flex align-items-center gap-1 overflow-hidden">
+          <i class="bi bi-people-fill text-secondary flex-shrink-0" style="font-size:0.7rem"></i>
+          <span class="fw-bold text-light text-truncate" style="font-size:0.875rem">{{ team.name }}</span>
+        </div>
+        <div class="d-flex align-items-center gap-1 flex-shrink-0 ms-1">
+          <span class="{% if team in violations %}badge-violation{% else %}badge bg-secondary{% endif %}"
+                id="count-{{ team.id }}"
+                style="font-size:0.6875rem; font-weight:700; white-space:nowrap">
+            {{ team.member_count }}&thinsp;/&thinsp;{{ session.min_size }}–{{ session.max_size }}
+          </span>
+          <button class="btn-lock{% if team.is_locked %} locked{% endif %}"
+                  data-team-id="{{ team.id }}"
+                  data-url="{% url 'teacher_side:api_toggle_team_lock' session.id team.id %}"
+                  title="{% if team.is_locked %}Unlock team{% else %}Lock team{% endif %}">
+            <i class="bi {% if team.is_locked %}bi-lock-fill{% else %}bi-unlock{% endif %}"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Student list (SortableJS target) -->
+      <ul class="student-list" data-team-id="{{ team.id }}">
+        {% for m in team.memberships.all %}
+        <li class="student-item{% if m.is_locked %} locked{% endif %}"
+            data-membership-id="{{ m.id }}">
+          <i class="bi bi-grip-vertical text-muted flex-shrink-0" style="font-size:0.75rem"></i>
+          <span class="text-truncate flex-grow-1"
+                style="font-family:'JetBrains Mono',monospace; font-size:0.8rem">{{ m.username }}</span>
+          <button class="btn-lock student-lock{% if m.is_locked %} locked{% endif %} ms-auto flex-shrink-0"
+                  data-membership-id="{{ m.id }}"
+                  data-url="{% url 'teacher_side:api_toggle_student_lock' session.id m.id %}"
+                  title="{% if m.is_locked %}Unlock student{% else %}Lock student{% endif %}">
+            <i class="bi {% if m.is_locked %}bi-lock-fill{% else %}bi-unlock{% endif %}"></i>
+          </button>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% empty %}
+    <p class="text-muted small pt-3 ps-1">No teams found for this session.</p>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── Unassigned pool ────────────────────────────────────────────── -->
+<div class="container-fluid px-3 mt-3 pb-4">
+  <div class="unassigned-pool">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <i class="bi bi-inbox text-secondary"></i>
+      <span class="fw-bold text-light" style="font-size:0.875rem">Unassigned</span>
+      <span class="badge bg-secondary ms-1" id="count-unassigned"
+            style="font-size:0.6875rem; font-weight:700">{{ unassigned|length }}</span>
+    </div>
+    <ul class="student-list" data-team-id="">
+      {% for m in unassigned %}
+      <li class="student-item{% if m.is_locked %} locked{% endif %}"
+          data-membership-id="{{ m.id }}">
+        <i class="bi bi-grip-vertical text-muted flex-shrink-0" style="font-size:0.75rem"></i>
+        <span class="text-truncate flex-grow-1"
+              style="font-family:'JetBrains Mono',monospace; font-size:0.8rem">{{ m.username }}</span>
+        <button class="btn-lock student-lock{% if m.is_locked %} locked{% endif %} ms-auto flex-shrink-0"
+                data-membership-id="{{ m.id }}"
+                data-url="{% url 'teacher_side:api_toggle_student_lock' session.id m.id %}"
+                title="{% if m.is_locked %}Unlock student{% else %}Lock student{% endif %}">
+          <i class="bi {% if m.is_locked %}bi-lock-fill{% else %}bi-unlock{% endif %}"></i>
+        </button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+<!-- ── Re-match modal ────────────────────────────────────────────── -->
+<div class="modal fade" id="rematchModal" tabindex="-1"
+     aria-labelledby="rematchModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content"
+         style="background:#1e293b; border:1px solid rgba(255,255,255,0.08)">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="rematchModalLabel">
+          <i class="bi bi-arrow-repeat me-2"></i>Re-match Unlocked Students
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Only unlocked students will be reshuffled.
+          Locked teams and locked students are preserved.
+        </p>
+        <div class="row g-3 mb-4">
+          {% with w=session.weights %}
+          <div class="col-md-4">
+            <label class="form-label text-light small">Availability Similarity</label>
+            <input type="number" class="form-control" id="w_availability"
+                   value="{{ w.availability|default:5 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Commitment Similarity</label>
+            <input type="number" class="form-control" id="w_commitment"
+                   value="{{ w.commitment|default:5 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Professional Background Diversity</label>
+            <input type="number" class="form-control" id="w_job"
+                   value="{{ w.job|default:3 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Educational Background Diversity</label>
+            <input type="number" class="form-control" id="w_education"
+                   value="{{ w.education|default:3 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Age Diversity</label>
+            <input type="number" class="form-control" id="w_age"
+                   value="{{ w.age|default:5 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Gender Diversity</label>
+            <input type="number" class="form-control" id="w_gender"
+                   value="{{ w.gender|default:5 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Experience Level Diversity</label>
+            <input type="number" class="form-control" id="w_experience"
+                   value="{{ w.experience|default:6 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Leadership Diversity</label>
+            <input type="number" class="form-control" id="w_lead"
+                   value="{{ w.lead|default:6 }}" min="0" max="10">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label text-light small">Task Interest Similarity</label>
+            <input type="number" class="form-control" id="w_tasks"
+                   value="{{ w.tasks|default:10 }}" min="0" max="10">
+          </div>
+          {% endwith %}
+        </div>
+
+        <!-- Progress bar -->
+        <div class="progress" style="height:6px; background:rgba(255,255,255,0.08); border-radius:3px">
+          <div class="progress-bar" id="rematchProgressBar" role="progressbar"
+               style="width:0%; background:linear-gradient(to right,#3b82f6,#8b5cf6);
+                      transition:width 0.3s ease-in-out">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" id="rematchCancelBtn"
+                class="btn btn-sm btn-outline-secondary" disabled
+                onclick="cancelRematch()">
+          <i class="bi bi-x-circle me-1"></i>Cancel
+        </button>
+        <button type="button" id="rematchSubmitBtn"
+                class="btn btn-sm btn-gradient text-white"
+                onclick="submitRematch()">
+          <i class="bi bi-arrow-repeat me-1"></i>Start Re-match
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Download confirm modal ────────────────────────────────────── -->
+<div class="modal fade" id="downloadConfirmModal" tabindex="-1"
+     aria-labelledby="downloadConfirmModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content"
+         style="background:#1e293b; border:1px solid rgba(255,255,255,0.08)">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="downloadConfirmModalLabel">
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Size Violations Detected
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small">
+          The following teams do not meet the size constraints
+          ({{ session.min_size }}–{{ session.max_size }} members):
+        </p>
+        <ul id="violationList" class="text-warning small mb-2"></ul>
+        <p class="mb-0 small">Download anyway?</p>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-gradient-success text-white"
+                onclick="doDownload(true)">
+          <i class="bi bi-download me-1"></i>Download Anyway
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container (z-index 1090 > toolbar 1020) ─────────────── -->
+<div class="position-fixed top-0 end-0 p-3" style="z-index:1090" id="toastContainer"></div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- SortableJS 1.15 -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+
+<script>
+  // ── URL constants ────────────────────────────────────────────────
+  const MOVE_URL           = "{% url 'teacher_side:api_move_student' session.id %}";
+  const EXPORT_URL         = "{% url 'teacher_side:export_csv' session.id %}";
+  const REMATCH_START_URL  = "{% url 'teacher_side:rematch_start' session.id %}";
+  const REMATCH_CANCEL_URL = "{% url 'teacher_side:rematch_cancel' session.id %}";
+
+  // ── CSRF helper (Step 0.5) ───────────────────────────────────────
+  function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[2]) : null;
+  }
+  const CSRF_TOKEN = getCookie('csrftoken');
+
+  async function postJSON(url, body) {
+    const response = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, data: await response.json().catch(() => null) };
+  }
+
+  // ── Toast helper ─────────────────────────────────────────────────
+  function showToast(msg, type) {
+    const colors = { info: '#38bdf8', error: '#ef4444', success: '#10b981' };
+    const color = colors[type] || colors.info;
+    const id = 'toast-' + Date.now();
+    const el = document.createElement('div');
+    el.id = id;
+    el.className = 'toast show align-items-center border-0 mb-2';
+    el.style.cssText = 'background:#1e293b; border-left:3px solid ' + color + ' !important; min-width:280px';
+    el.setAttribute('role', 'alert');
+    el.innerHTML =
+      '<div class="d-flex">' +
+      '<div class="toast-body text-light small">' + msg + '</div>' +
+      '<button type="button" class="btn-close btn-close-white me-2 m-auto"' +
+      ' onclick="document.getElementById(\'' + id + '\').remove()"></button>' +
+      '</div>';
+    document.getElementById('toastContainer').appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  // ── Count badge update ───────────────────────────────────────────
+  const MIN_SIZE = {{ session.min_size }};
+  const MAX_SIZE = {{ session.max_size }};
+
+  function updateCountBadge(teamId, count) {
+    const el = document.getElementById(teamId ? 'count-' + teamId : 'count-unassigned');
+    if (!el) return;
+    if (teamId) {
+      el.textContent = count + ' / ' + MIN_SIZE + '–' + MAX_SIZE;
+      const col = el.closest('.team-column');
+      if (col) {
+        const isViolation = count < MIN_SIZE || count > MAX_SIZE;
+        col.classList.toggle('violation', isViolation);
+        el.className = isViolation ? 'badge-violation' : 'badge bg-secondary';
+        el.style.cssText = 'font-size:0.6875rem; font-weight:700; white-space:nowrap';
+      }
+    } else {
+      el.textContent = count;
+    }
+  }
+
+  // ── Drag-and-drop (SortableJS) ───────────────────────────────────
+  async function handleDrop(evt) {
+    const item = evt.item;
+    const membershipId = item.dataset.membershipId;
+    const toList = evt.to;
+    const fromList = evt.from;
+    const teamId = toList.dataset.teamId || null;
+
+    const r = await postJSON(MOVE_URL, {
+      membership_id: parseInt(membershipId),
+      team_id: teamId ? parseInt(teamId) : null,
+    });
+
+    if (r.status === 200 && r.data && r.data.ok) {
+      if (typeof r.data.from_count === 'number')
+        updateCountBadge(fromList.dataset.teamId || null, r.data.from_count);
+      if (typeof r.data.to_count === 'number')
+        updateCountBadge(teamId, r.data.to_count);
+    } else {
+      // Revert: put item back at its original position
+      const isSameList = fromList === toList;
+      const revertRef = isSameList
+        ? (evt.newIndex > evt.oldIndex
+            ? fromList.children[evt.oldIndex]
+            : fromList.children[evt.oldIndex + 1] || null)
+        : fromList.children[evt.oldIndex] || null;
+      fromList.insertBefore(item, revertRef);
+
+      const errMap = {
+        student_locked:      'Student is locked.',
+        source_team_locked:  'Source team is locked.',
+        target_team_locked:  'Target team is locked.',
+      };
+      showToast(errMap[r.data && r.data.error] || 'Move failed.', 'error');
+    }
+  }
+
+  document.querySelectorAll('.student-list').forEach((list) => {
+    new Sortable(list, {
+      group: 'students',
+      animation: 150,
+      emptyInsertThreshold: 24,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      filter: '.student-item.locked',
+      onEnd: handleDrop,
+    });
+  });
+
+  // ── Team lock toggles ────────────────────────────────────────────
+  document.querySelectorAll('.btn-lock:not(.student-lock)').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const r = await postJSON(btn.dataset.url, {});
+      if (r.status !== 200) { showToast('Lock toggle failed.', 'error'); return; }
+      const locked = r.data.locked;
+      const col = btn.closest('.team-column');
+      btn.classList.toggle('locked', locked);
+      btn.querySelector('i').className = locked ? 'bi bi-lock-fill' : 'bi bi-unlock';
+      btn.title = locked ? 'Unlock team' : 'Lock team';
+      if (col) col.classList.toggle('is-locked', locked);
+    });
+  });
+
+  // ── Student lock toggles ─────────────────────────────────────────
+  document.querySelectorAll('.student-lock').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const r = await postJSON(btn.dataset.url, {});
+      if (r.status !== 200) { showToast('Lock toggle failed.', 'error'); return; }
+      const locked = r.data.locked;
+      const item = btn.closest('.student-item');
+      btn.classList.toggle('locked', locked);
+      btn.querySelector('i').className = locked ? 'bi bi-lock-fill' : 'bi bi-unlock';
+      btn.title = locked ? 'Unlock student' : 'Lock student';
+      if (item) item.classList.toggle('locked', locked);
+    });
+  });
+
+  // ── Export / download ────────────────────────────────────────────
+  async function doDownload(confirmed) {
+    bootstrap.Modal.getInstance(document.getElementById('downloadConfirmModal'))?.hide();
+
+    const resp = await fetch(EXPORT_URL, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: JSON.stringify({ confirmed: !!confirmed }),
+    });
+
+    if (resp.status === 409) {
+      const data = await resp.json().catch(() => null);
+      if (data && data.violations) {
+        document.getElementById('violationList').innerHTML =
+          data.violations.map((v) =>
+            '<li>' + v.name + ': ' + v.count + ' members (need ' + v.min + '–' + v.max + ')</li>'
+          ).join('');
+        new bootstrap.Modal(document.getElementById('downloadConfirmModal')).show();
+      } else {
+        showToast('Export failed.', 'error');
+      }
+      return;
+    }
+
+    if (resp.status !== 200) { showToast('Export failed.', 'error'); return; }
+
+    const disposition = resp.headers.get('Content-Disposition') || '';
+    const nameMatch = disposition.match(/filename="([^"]+)"/);
+    const filename = nameMatch ? nameMatch[1] : 'teams_export.csv';
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('CSV downloaded.', 'success');
+  }
+
+  document.getElementById('downloadBtn').addEventListener('click', () => doDownload(false));
+
+  // ── Rematch (verbatim from roadmap Step 5.1) ─────────────────────
+  let currentRematchES = null;
+
+  async function runRematch(weights) {
+    const btn = document.getElementById('rematchSubmitBtn');
+    const cancelBtn = document.getElementById('rematchCancelBtn');
+    const bar = document.getElementById('rematchProgressBar');
+    let lastProgress = 0;   // N2: snap monotonically
+
+    // C2: disable submit button immediately to block double-clicks
+    btn.disabled = true;
+    cancelBtn.disabled = false;
+
+    const start = await postJSON(REMATCH_START_URL, weights).catch(() => null);
+    if (!start || start.status !== 200 || !start.data || !start.data.stream_url) {
+      btn.disabled = false;
+      cancelBtn.disabled = true;
+      const msg = start && start.data && start.data.error === 'already_running'
+        ? 'A rematch is already running.'
+        : 'Could not start rematch.';
+      showToast(msg, 'error');
+      return;
+    }
+
+    const es = new EventSource(start.data.stream_url);
+    currentRematchES = es;
+
+    const cleanup = () => {
+      es.close();             // C1: stop EventSource auto-reconnect
+      currentRematchES = null;
+      btn.disabled = false;
+      cancelBtn.disabled = true;
+    };
+
+    es.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.error) {
+        cleanup();
+        const msg = ({
+          already_running: 'A rematch is already running.',
+          worker_died:     'Rematch crashed. Try again.',
+        })[data.error] || ('Rematch error: ' + data.error);
+        showToast(msg, 'error');
+        return;
+      }
+      if (data.cancelled) {
+        cleanup();
+        showToast('Rematch cancelled.', 'info');
+        return;
+      }
+      if (data.done) {
+        if (data.noop) {
+          cleanup();
+          showToast('Not enough unlocked students to rematch.', 'info');
+          return;
+        }
+        bar.style.width = '100%';
+        cleanup();
+        window.location.reload();   // refresh server-side state
+        return;
+      }
+
+      // Progress frame
+      const pct = Math.round((data.progress / data.total) * 100);
+      if (pct >= lastProgress) {       // N2: never go backwards
+        lastProgress = pct;
+        bar.style.width = pct + '%';
+      }
+    };
+
+    es.onerror = () => {
+      // Network error or non-200 response. EventSource WILL auto-reconnect by
+      // default — calling cleanup() (which calls es.close()) prevents that.
+      cleanup();
+      showToast('Lost connection to rematch stream.', 'error');
+    };
+  }
+
+  function cancelRematch() {
+    if (!currentRematchES) return;
+    // Tell the server to flip the cancel flag; the running thread will halt.
+    postJSON(REMATCH_CANCEL_URL, {}).catch(() => {});
+    // Don't close the EventSource yet — wait for the 'cancelled' frame so the UI
+    // sees the actual halt, not a client-side guess.
+  }
+
+  function submitRematch() {
+    const weights = {
+      availability: parseInt(document.getElementById('w_availability').value) || 0,
+      commitment:   parseInt(document.getElementById('w_commitment').value)   || 0,
+      job:          parseInt(document.getElementById('w_job').value)          || 0,
+      education:    parseInt(document.getElementById('w_education').value)    || 0,
+      age:          parseInt(document.getElementById('w_age').value)          || 0,
+      gender:       parseInt(document.getElementById('w_gender').value)       || 0,
+      experience:   parseInt(document.getElementById('w_experience').value)   || 0,
+      lead:         parseInt(document.getElementById('w_lead').value)         || 0,
+      tasks:        parseInt(document.getElementById('w_tasks').value)        || 0,
+    };
+    runRematch(weights);
+  }
+
+  // ── Overflow shadow detection ────────────────────────────────────
+  (function detectOverflow() {
+    const wrapper = document.getElementById('teamsWrapper');
+    const outer   = document.getElementById('teamsScrollWrapper');
+    if (!wrapper || !outer) return;
+    function check() {
+      outer.classList.toggle('has-overflow', wrapper.scrollWidth > wrapper.clientWidth);
+    }
+    check();
+    window.addEventListener('resize', check);
+    wrapper.addEventListener('scroll', check);
+  })();
+
+  // ── Scroll position save / restore ──────────────────────────────
+  (function scrollPersist() {
+    const wrapper = document.getElementById('teamsWrapper');
+    if (!wrapper) return;
+    const key = 'adjust-scroll-{{ session.id }}';
+    const saved = sessionStorage.getItem(key);
+    if (saved) wrapper.scrollLeft = parseInt(saved, 10);
+    wrapper.addEventListener('scroll', () => sessionStorage.setItem(key, wrapper.scrollLeft));
+  })();
+</script>
+</body>
+</html>
