@@ -2,6 +2,22 @@
     --gradient-start: #3b82f6;
     --gradient-end: #8b5cf6;
     --gradient-success: linear-gradient(135deg, #10b981, #3b82f6);
+
+    /* Color constants */
+    --bg-base:        #0f172a;
+    --bg-surface:     #1e293b;
+    --bg-raised:      #273548;
+    --text-primary:   #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted:     #64748b;
+    --accent-start:   #3b82f6;
+    --accent-end:     #8b5cf6;
+    --success:        #10b981;
+    --warning:        #f97316;
+    --error:          #ef4444;
+    --info:           #38bdf8;
+    --border:         rgba(255, 255, 255, 0.08);
+    --gradient:       linear-gradient(135deg, var(--accent-start), var(--accent-end));
 }
 
 body {
@@ -72,4 +88,216 @@ body {
     border-color: #38bdf8;
     color: #f8fafc;
     box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
+}
+
+/* ============================================================
+   Adjustment view
+   ============================================================ */
+
+/* Sticky toolbar */
+.adjust-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border);
+    padding: 0.875rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+    backdrop-filter: blur(8px);
+}
+
+/* Outer scroll wrapper — hosts the right-edge overflow fade */
+.teams-scroll-wrapper {
+    position: relative;
+    overflow: hidden;
+}
+
+.teams-scroll-wrapper.has-overflow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 48px;
+    background: linear-gradient(to right, transparent, var(--bg-base));
+    pointer-events: none;
+}
+
+/* Inner horizontal flex row */
+.teams-wrapper {
+    display: flex;
+    gap: 0.875rem;
+    overflow-x: auto;
+    padding: 1.5rem;
+    min-height: 320px;
+    align-items: flex-start;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* Individual team column card — no hover lift (workspace item, not nav card) */
+.team-column {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.875rem;
+    min-width: 210px;
+    max-width: 220px;
+    flex-shrink: 0;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.team-column.drag-over {
+    border-color: var(--accent-start);
+    background: rgba(59, 130, 246, 0.07);
+}
+
+.team-column.violation {
+    border-color: rgba(249, 115, 22, 0.5);
+}
+
+.team-column.is-locked {
+    border-color: rgba(139, 92, 246, 0.35);
+}
+
+/* Student list — min-height keeps empty columns droppable (SortableJS) */
+.student-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-height: 60px;
+}
+
+/* Individual student chip */
+.student-item {
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.375rem 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    cursor: grab;
+    user-select: none;
+    transition: border-color 0.15s;
+}
+
+.student-item:hover {
+    border-color: rgba(56, 189, 248, 0.4);
+}
+
+.student-item.sortable-ghost {
+    opacity: 0.35;
+    border-style: dashed;
+}
+
+.student-item.locked {
+    border-left: 2px solid #8b5cf6;
+    opacity: 0.8;
+    cursor: default;
+}
+
+.student-item.moving {
+    opacity: 0.6;
+}
+
+/* Unassigned pool — dashed border signals "drop zone" */
+.unassigned-pool {
+    background: var(--bg-surface);
+    border: 1.5px dashed var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.unassigned-pool .student-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+}
+
+.unassigned-pool.drag-over {
+    border-color: var(--accent-start);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+/* Violation count badge — orange→red gradient */
+.badge-violation {
+    background: linear-gradient(to right, #f97316, #ef4444);
+    color: #fff;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border-radius: 4px;
+    padding: 0.2rem 0.55em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+/* Lock toggle — ghost icon button, purple when locked */
+.btn-lock {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.2rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+    transition: color 0.15s;
+    flex-shrink: 0;
+}
+
+.btn-lock:hover {
+    color: #a78bfa;
+}
+
+.btn-lock.locked i {
+    color: #a78bfa;
+}
+
+/* Drag insertion line shown during SortableJS drag-over */
+.sortable-drag-line {
+    height: 2px;
+    background: var(--accent-start);
+    border-radius: 1px;
+    margin: 2px 0;
+    opacity: 0.9;
+}
+
+/* Soft-constraint warning chips in the team-column header */
+.violation-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.25rem;
+}
+
+.violation-chips:empty {
+    margin-top: 0;
+}
+
+.violation-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    background: rgba(249, 115, 22, 0.18);
+    color: #fdba74;
+    font-size: 0.625rem;
+    line-height: 1;
+    cursor: help;
+}
+
+.violation-chip i {
+    font-size: 0.75rem;
 }

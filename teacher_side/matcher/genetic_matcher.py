@@ -1,5 +1,6 @@
 """ Genetic algorithm student matcher """
 
+import logging
 import math
 import pygad
 
@@ -7,6 +8,8 @@ NUM_GENERATIONS = 200
 
 from teacher_side.matcher.encoder import prepare_data
 from teacher_side.matcher.fitness_function import make_fitness_func
+
+logger = logging.getLogger(__name__)
 
 
 def match(df, team_template, weights, constraints, on_generation=None, random_seed=None):
@@ -70,9 +73,6 @@ def match(df, team_template, weights, constraints, on_generation=None, random_se
     ga_instance.run()
     best_solution, best_fitness, _ = ga_instance.best_solution()
 
-    print(best_solution)
-    print(type(best_solution))
-
     # builds team names from template or default names 'Team X'
     template_names = team_template.team_names if team_template else []
     n_teams_used = int(max(best_solution)) + 1
@@ -100,7 +100,7 @@ def match(df, team_template, weights, constraints, on_generation=None, random_se
     if target_col: # adds results to first empty column after 'mode'
         df[target_col] = team_assignments
     else: # creates new column 'teams'
-        print("No empty column found after 'mode'. Creating 'teams' column.")
+        logger.info("ga.no_empty_column_after_mode")
         df['teams'] = team_assignments
         target_col = 'teams'
 
