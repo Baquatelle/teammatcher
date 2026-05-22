@@ -22,6 +22,11 @@ import pandas as pd
 
 from teacher_side.matcher.genetic_matcher import match, NUM_GENERATIONS
 from teacher_side.matcher.utils import get_weights
+from teacher_side.matcher.violations import (
+    compute_session_violations,
+    VIOLATION_ICONS,
+    VIOLATION_LABELS,
+)
 from .forms import UploadFileForm
 from .models import (
     CSVGeneration,
@@ -415,9 +420,20 @@ def adjust_teams(request, session_id):
 
     teams.sort(key=_natural_key)
     unassigned = session.memberships.filter(team=None).select_related("profile")
-    violations = [
-        t for t in teams if not (session.min_size <= t.member_count <= session.max_size)
-    ]
+
+    # Soft-constraint codes per team. Each team object also gets a pre-built
+    # list of {code, icon, label} dicts for the chip row in the template,
+    # since Django templates don't have a clean dict-by-key lookup syntax.
+    team_violations = compute_session_violations(session)
+    for t in teams:
+        codes = team_violations.get(t.id, [])
+        t.violation_codes = codes
+        t.violation_chips = [
+            {"code": c, "icon": VIOLATION_ICONS[c], "label": VIOLATION_LABELS[c]}
+            for c in codes
+            if c != "size"
+        ]
+    violation_count = sum(1 for codes in team_violations.values() if codes)
 
     return render(
         request,
@@ -426,8 +442,9 @@ def adjust_teams(request, session_id):
             "session": session,
             "teams": teams,
             "unassigned": unassigned,
-            "violations": violations,
-            "violation_count": len(violations),
+            "violation_count": violation_count,
+            "violation_labels": VIOLATION_LABELS,
+            "violation_icons":  VIOLATION_ICONS,
         },
     )
 
@@ -465,7 +482,21 @@ def api_move_student(request, session_id):
     from_count = old_team.memberships.count() if old_team else 0
     to_count = target_team.memberships.count() if target_team else 0
 
-    return JsonResponse({"ok": True, "from_count": from_count, "to_count": to_count})
+    # Recompute soft-constraint violations after the move so the UI can
+    # refresh icons on the affected columns without a full reload.
+    # TODO(perf): re-encodes every membership on each drop. Fine up to ~200 students;
+    #             if lagging, narrow this to the source/target teams only.
+    team_violations = compute_session_violations(session)
+    from_violations = team_violations.get(old_team.id, []) if old_team else []
+    to_violations = team_violations.get(target_team.id, []) if target_team else []
+
+    return JsonResponse({
+        "ok": True,
+        "from_count": from_count,
+        "to_count": to_count,
+        "from_violations": from_violations,
+        "to_violations": to_violations,
+    })
 
 
 @staff_member_required
@@ -501,17 +532,19 @@ def export_csv(request, session_id):
         confirmed = False
 
     if not confirmed:
-        teams = session.teams.annotate(member_count=Count("memberships"))
-        violations = [
-            {
-                "name": t.name,
-                "count": t.member_count,
-                "min": session.min_size,
-                "max": session.max_size,
-            }
-            for t in teams
-            if not (session.min_size <= t.member_count <= session.max_size)
-        ]
+        team_violations = compute_session_violations(session)
+        teams_qs = session.teams.annotate(member_count=Count("memberships"))
+        violations = []
+        for t in teams_qs:
+            codes = team_violations.get(t.id, [])
+            if codes:
+                violations.append({
+                    "name": t.name,
+                    "count": t.member_count,
+                    "min": session.min_size,
+                    "max": session.max_size,
+                    "codes": codes,
+                })
         if violations:
             return JsonResponse({"violations": violations}, status=409)
 
