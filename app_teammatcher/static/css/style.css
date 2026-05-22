@@ -273,3 +273,31 @@ body {
     margin: 2px 0;
     opacity: 0.9;
 }
+
+/* Soft-constraint warning chips in the team-column header */
+.violation-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.25rem;
+}
+
+.violation-chips:empty {
+    margin-top: 0;
+}
+
+.violation-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    background: rgba(249, 115, 22, 0.18);
+    color: #fdba74;
+    font-size: 0.625rem;
+    line-height: 1;
+    cursor: help;
+}
+
+.violation-chip i {
+    font-size: 0.75rem;
+}
