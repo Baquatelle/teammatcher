@@ -30,7 +30,7 @@
   {% if violation_count %}
   <span class="badge-violation">
     <i class="bi bi-exclamation-triangle-fill me-1"></i>
-    {{ violation_count }} violation{{ violation_count|pluralize }}
+    {{ violation_count }} team{{ violation_count|pluralize }} {{ violation_count|pluralize:"has,have" }} violations
   </span>
   {% endif %}
 
@@ -48,7 +48,7 @@
 <div class="teams-scroll-wrapper" id="teamsScrollWrapper">
   <div class="teams-wrapper" id="teamsWrapper">
     {% for team in teams %}
-    <div class="team-column{% if team in violations %} violation{% endif %}{% if team.is_locked %} is-locked{% endif %}"
+    <div class="team-column{% if team.violation_codes %} violation{% endif %}{% if team.is_locked %} is-locked{% endif %}"
          data-team-id="{{ team.id }}">
 
       <!-- Column header -->
@@ -58,7 +58,7 @@
           <span class="fw-bold text-light text-truncate" style="font-size:0.875rem">{{ team.name }}</span>
         </div>
         <div class="d-flex align-items-center gap-1 flex-shrink-0 ms-1">
-          <span class="{% if team in violations %}badge-violation{% else %}badge bg-secondary{% endif %}"
+          <span class="{% if 'size' in team.violation_codes %}badge-violation{% else %}badge bg-secondary{% endif %}"
                 id="count-{{ team.id }}"
                 style="font-size:0.6875rem; font-weight:700; white-space:nowrap">
             {{ team.member_count }}&thinsp;/&thinsp;{{ session.min_size }}–{{ session.max_size }}
@@ -70,6 +70,15 @@
             <i class="bi {% if team.is_locked %}bi-lock-fill{% else %}bi-unlock{% endif %}"></i>
           </button>
         </div>
+      </div>
+
+      <!-- Soft-constraint chips (one per non-size violation) -->
+      <div class="violation-chips" data-team-id="{{ team.id }}">
+        {% for chip in team.violation_chips %}
+        <span class="violation-chip" data-bs-toggle="tooltip" title="{{ chip.label }}">
+          <i class="bi bi-{{ chip.icon }}"></i>
+        </span>
+        {% endfor %}
       </div>
 
       <!-- Student list (SortableJS target) -->
@@ -223,14 +232,13 @@
          style="background:#1e293b; border:1px solid rgba(255,255,255,0.08)">
       <div class="modal-header border-secondary">
         <h5 class="modal-title" id="downloadConfirmModalLabel">
-          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Size Violations Detected
+          <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>Constraint Violations Detected
         </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <p class="text-muted small">
-          The following teams do not meet the size constraints
-          ({{ session.min_size }}–{{ session.max_size }} members):
+          The following teams have unresolved soft-constraint violations:
         </p>
         <ul id="violationList" class="text-warning small mb-2"></ul>
         <p class="mb-0 small">Download anyway?</p>
@@ -254,6 +262,8 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <!-- SortableJS 1.15 -->
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+{{ violation_labels|json_script:"violation-labels-data" }}
+{{ violation_icons|json_script:"violation-icons-data" }}
 
 <script>
   // ── URL constants ────────────────────────────────────────────────
@@ -261,6 +271,9 @@
   const EXPORT_URL         = "{% url 'teacher_side:export_csv' session.id %}";
   const REMATCH_START_URL  = "{% url 'teacher_side:rematch_start' session.id %}";
   const REMATCH_CANCEL_URL = "{% url 'teacher_side:rematch_cancel' session.id %}";
+
+  const VIOLATION_LABELS = JSON.parse(document.getElementById('violation-labels-data').textContent);
+  const VIOLATION_ICONS  = JSON.parse(document.getElementById('violation-icons-data').textContent);
 
   // ── CSRF helper (Step 0.5) ───────────────────────────────────────
   function getCookie(name) {
@@ -324,6 +337,46 @@
     }
   }
 
+  // ── Soft-constraint icon rendering ───────────────────────────────
+  function renderViolations(teamId, codes) {
+    if (!teamId) return; // Unassigned pool has no team column.
+    const col = document.querySelector('.team-column[data-team-id="' + teamId + '"]');
+    if (!col) return;
+
+    // Outer red highlight: any code (size or otherwise) means the team is in violation.
+    col.classList.toggle('violation', codes.length > 0);
+
+    // Size badge styling reflects the 'size' code specifically.
+    const badge = document.getElementById('count-' + teamId);
+    if (badge) {
+      const sizeBad = codes.indexOf('size') !== -1;
+      badge.className = sizeBad ? 'badge-violation' : 'badge bg-secondary';
+      badge.style.cssText = 'font-size:0.6875rem; font-weight:700; white-space:nowrap';
+    }
+
+    // Replace chips. 'size' is represented by the badge, so it's filtered out here.
+    const chips = col.querySelector('.violation-chips');
+    if (chips) {
+      // Tear down any tooltips on the old chips so we don't leak instances.
+      chips.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+        const inst = bootstrap.Tooltip.getInstance(el);
+        if (inst) inst.dispose();
+      });
+      chips.innerHTML = codes
+        .filter((c) => c !== 'size')
+        .map((c) => {
+          const label = (VIOLATION_LABELS[c] || c).replace(/"/g, '&quot;');
+          const icon = VIOLATION_ICONS[c] || 'exclamation-triangle-fill';
+          return '<span class="violation-chip" data-bs-toggle="tooltip" title="' +
+                 label + '"><i class="bi bi-' + icon + '"></i></span>';
+        })
+        .join('');
+      chips.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+        new bootstrap.Tooltip(el);
+      });
+    }
+  }
+
   // ── Drag-and-drop (SortableJS) ───────────────────────────────────
   async function handleDrop(evt) {
     const item = evt.item;
@@ -342,6 +395,10 @@
         updateCountBadge(fromList.dataset.teamId || null, r.data.from_count);
       if (typeof r.data.to_count === 'number')
         updateCountBadge(teamId, r.data.to_count);
+      if (Array.isArray(r.data.from_violations))
+        renderViolations(fromList.dataset.teamId || null, r.data.from_violations);
+      if (Array.isArray(r.data.to_violations))
+        renderViolations(teamId, r.data.to_violations);
     } else {
       // Revert: put item back at its original position
       const isSameList = fromList === toList;
@@ -419,10 +476,27 @@
     if (resp.status === 409) {
       const data = await resp.json().catch(() => null);
       if (data && data.violations) {
-        document.getElementById('violationList').innerHTML =
-          data.violations.map((v) =>
-            '<li>' + v.name + ': ' + v.count + ' members (need ' + v.min + '–' + v.max + ')</li>'
-          ).join('');
+        const list = document.getElementById('violationList');
+        list.replaceChildren();
+        data.violations.forEach((v) => {
+          const teamLi = document.createElement('li');
+          const strong = document.createElement('strong');
+          strong.textContent = v.name;
+          teamLi.appendChild(strong);
+          teamLi.appendChild(document.createTextNode(' — ' + v.count + ' members'));
+
+          const reasons = (v.codes || []).map((c) => VIOLATION_LABELS[c] || c);
+          if (reasons.length > 0) {
+            const reasonsUl = document.createElement('ul');
+            reasons.forEach((reason) => {
+              const reasonLi = document.createElement('li');
+              reasonLi.textContent = reason;
+              reasonsUl.appendChild(reasonLi);
+            });
+            teamLi.appendChild(reasonsUl);
+          }
+          list.appendChild(teamLi);
+        });
         new bootstrap.Modal(document.getElementById('downloadConfirmModal')).show();
       } else {
         showToast('Export failed.', 'error');
@@ -571,6 +645,11 @@
     if (saved) wrapper.scrollLeft = parseInt(saved, 10);
     wrapper.addEventListener('scroll', () => sessionStorage.setItem(key, wrapper.scrollLeft));
   })();
+
+  // ── Initialize all server-rendered tooltips ─────────────────────
+  document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+    if (!bootstrap.Tooltip.getInstance(el)) new bootstrap.Tooltip(el);
+  });
 </script>
 </body>
 </html>
