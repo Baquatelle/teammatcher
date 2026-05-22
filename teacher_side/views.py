@@ -141,6 +141,7 @@ def _run_rematch(session, weights, on_generation=None, cancel_event=None, stats=
         .select_related("team")
     )
     if not unlocked:
+        stats["skipped_reason"] = "too_few_students"
         return
 
     cols = session.column_order or list(unlocked[0].original_row.keys())
@@ -593,16 +594,22 @@ def rematch_start(request, session_id):
     cancel_event = threading.Event()
     progress_q: queue.Queue = queue.Queue()
 
+    db_lock_acquired = False
     try:
         if not _try_acquire_db_lock(session.id):
             _audit_rejected(session, "db_lock")
+            proc_lock.release()
             return JsonResponse({"ok": False, "error": "already_running"}, status=409)
+        db_lock_acquired = True
         rematch_token = _claim_rematch_token(session)
         if rematch_token is None:
             _release_db_lock(session.id)
             _audit_rejected(session, "token_held")
+            proc_lock.release()
             return JsonResponse({"ok": False, "error": "already_running"}, status=409)
     except Exception:
+        if db_lock_acquired:
+            _release_db_lock(session.id)
         proc_lock.release()
         raise
 
@@ -782,4 +789,10 @@ def rematch_cancel(request, session_id):
     )
     if updated == 0:
         return JsonResponse({"ok": False, "error": "not_found"}, status=404)
+    # Signal the in-process cancel event so the running GA stops at the next generation
+    # without waiting for the SSE stream to disconnect.
+    with _PROGRESS_QUEUES_LOCK:
+        for (sid, _tok), (_q, ev) in list(_PROGRESS_QUEUES.items()):
+            if sid == session_id:
+                ev.set()
     return JsonResponse({"ok": True})
