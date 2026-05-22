@@ -312,7 +312,7 @@ A criterion's check is only evaluated for teams when the corresponding `session.
 - **`lead`** — number of "lead"-preference members ≠ 1 (i.e. zero leaders or 2+ leaders).
 - **`tasks`** — max agreement on any single task < 50% of team members.
 
-Empty teams (count = 0) only trigger the `size` violation; other criteria are not evaluated. Single-member teams skip diversity / std-based criteria (always pass for those) — only `size`, `lead`, `availability`, `tasks` apply to size-1 teams.
+Empty teams (count = 0) only trigger the `size` violation; other criteria are not evaluated. Single-member teams skip diversity / std-based criteria (always pass for those) — only `size`, `lead`, and `availability` apply to size-1 teams.
 
 ### C.3 Backend Changes
 
