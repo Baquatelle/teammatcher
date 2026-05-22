@@ -1,5 +1,7 @@
 """ Encoder for student profiles """
 
+from typing import NamedTuple
+
 import numpy as np
 from teacher_side.matcher.utils import get_student_data, get_tasks
 
@@ -146,3 +148,32 @@ def prepare_data(df):
         encoded_list.append(encoded)
 
     return np.vstack(encoded_list)
+
+
+class _ColIdx(NamedTuple):
+    n_tasks:     int
+    tasks_start: int
+    idx_commit:  int
+    idx_edu:     int
+    idx_job:     int
+    idx_age:     int
+    idx_sex:     int
+    idx_exp:     int
+    idx_lead:    int
+
+
+def col_idx(encoded) -> _ColIdx:
+    """Return column offsets for an encoded student matrix."""
+    n_tasks    = encoded.shape[1] - 28
+    idx_commit = 21 + n_tasks
+    return _ColIdx(
+        n_tasks=n_tasks,
+        tasks_start=21,
+        idx_commit=idx_commit,
+        idx_edu=idx_commit + 1,
+        idx_job=idx_commit + 2,
+        idx_age=idx_commit + 3,
+        idx_sex=idx_commit + 4,
+        idx_exp=idx_commit + 5,
+        idx_lead=idx_commit + 6,
+    )
