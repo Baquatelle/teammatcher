@@ -5,8 +5,8 @@ session.weights is > 0. Size is the exception — it is always evaluated, since
 it was the original soft constraint and is not gated by a weight.
 
 The rules correspond to the GA fitness sub-functions in fitness_function.py:
-a rule fires when that criterion's contribution to fitness would be
-(essentially) zero. Column index layout is shared via encoder.col_idx().
+violations are flagged when a criterion is poorly satisfied according to the
+thresholds below (often when the GA sub-score would be very low). Column index layout is shared via encoder.col_idx().
 Output is deterministic and ordered to match VIOLATION_CODES.
 """
 
