@@ -286,3 +286,57 @@ s-01123,,professional,Alfa,Alfa
 Identical to the input file with one addition: a team name column appended. All original columns and values are preserved unchanged. The LMS only reads the team name column on import; all other columns pass through unmodified.
 
 The only change the Team Matcher makes to the file is adding the team names.
+
+---
+
+## Appendix C — Plan: Soft-Constraint Warnings for All GA Criteria
+
+This appendix records the agreed plan for extending the manual-adjustment view's existing team-size warning to cover all 9 GA criteria.
+
+### C.1 Overview
+
+Extend the existing team-size soft-constraint check on `adjust.html` to cover all 9 GA criteria (availability, commitment, job, education, age, gender, experience, lead, tasks). Each weighted criterion becomes a per-team check that, when violated, surfaces as an inline warning icon in that team's column header and gates CSV export.
+
+### C.2 Violation Rules
+
+A criterion's check is only evaluated for teams when the corresponding `session.weights[key] > 0`.
+
+- **`size`** *(unchanged)* — team member count outside `[min_size, max_size]`.
+- **`availability`** — 0 time slots where every team member is free (no perfect-overlap slot).
+- **`commitment`** — standard deviation of commitment levels ≥ 1.0 across the team (members at very different commitment levels).
+- **`job`** — only 1 unique professional background across the team.
+- **`education`** — only 1 unique educational background across the team.
+- **`age`** — age standard deviation < 1.0 (no meaningful spread).
+- **`gender`** — only 1 unique gender.
+- **`experience`** — only 1 unique experience level.
+- **`lead`** — number of "lead"-preference members ≠ 1 (i.e. zero leaders or 2+ leaders).
+- **`tasks`** — max agreement on any single task < 50% of team members.
+
+Empty teams (count = 0) only trigger the `size` violation; other criteria are not evaluated. Single-member teams skip diversity / std-based criteria (always pass for those) — only `size`, `lead`, and `availability` apply to size-1 teams.
+
+### C.3 Backend Changes
+
+- New module `teacher_side/matcher/violations.py` exposes:
+  - A canonical `VIOLATION_CODES` constant and human-readable label/icon map.
+  - `compute_session_violations(session) -> {team_id: [codes...]}` — encodes all members once, slices by team.
+- Reuses the existing `prepare_data` / `encode_student` logic from `encoder.py` so violation checks stay consistent with the GA's scoring (no duplicate encoding rules).
+- `adjust_teams` view passes `team_violations` to the template plus a `violation_count` reflecting the total number of teams with at least one violation (any code, not just size).
+- `api_move_student` returns `from_violations` and `to_violations` (lists of codes) for the affected teams alongside the existing `from_count` / `to_count`.
+- `export_csv` extends the 409 "violations" response so each entry includes `name`, `count`, `min`, `max`, **and `codes`** (list of violation codes). Blocks & confirms if **any** team has any violation, not just size.
+
+### C.4 Frontend Changes (`adjust.html`)
+
+- Each team column header renders a row of inline warning icons — one Bootstrap icon per failing constraint, each with a Bootstrap tooltip giving a human-readable reason.
+- The size badge keeps its current red style when size is violated; new criteria use small icon-only warning chips next to the size badge.
+- Outer `.team-column.violation` red highlight applies if **any** code is present (not just size).
+- Toolbar `violation_count` badge counts teams with any violation.
+- After a drop, both source and target columns' icons re-render from the new `from_violations` / `to_violations` returned by `api_move_student` (no full reload).
+- Download confirm modal lists each violating team plus a comma-separated list of human-readable reasons. Heading and button copy generalized from "Size Violations Detected" → "Constraint Violations Detected".
+
+### C.5 Notes
+
+- Thresholds are deliberately strict — they fire when that criterion's contribution to the GA fitness is essentially zero, so icons remain meaningful and don't appear on every team.
+- All thresholds, code list, and tooltip strings live in one place (`violations.py`) plus a small mirrored JS map in `adjust.html`, so adjustments later are one-line edits.
+- No DB schema changes — violations are computed on demand from existing `MatchingSession` / `Team` / `TeamMembership` / `StudentProfile` data.
+- Tests should cover: empty team, single-member team, all-same-gender team, perfectly-balanced team, weight=0 suppresses the corresponding code, lead count of 0/1/2+. Existing tests for `api_move_student` and `export_csv` should be extended to assert the new fields.
+

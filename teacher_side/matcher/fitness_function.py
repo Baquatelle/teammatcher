@@ -3,6 +3,8 @@
 
 import numpy as np
 
+from teacher_side.matcher.encoder import col_idx
+
 
 # Reference: "A Genetic Algorithm for Identifying Overlapping Communities" (Social Networking, 2013).
 # Highlights finding intersection sets, similar to time intersections.
@@ -154,17 +156,7 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
         - function: fitness function for GA
     """
     w_avail, w_commit, w_job, w_edu, w_age, w_gender, w_exp, w_lead, w_tasks = weights
-    total_cols = students_encoded.shape[1]
-    n_tasks = total_cols - 28
-
-    tasks_start = 21
-    idx_commit  = 21 + n_tasks
-    idx_edu     = idx_commit + 1
-    idx_job     = idx_commit + 2
-    idx_age     = idx_commit + 3
-    idx_sex     = idx_commit + 4
-    idx_exp     = idx_commit + 5
-    idx_lead    = idx_commit + 6
+    ci = col_idx(students_encoded)
 
     def fitness_func(ga_instance, solution, solution_idx):
         solution_int = np.asarray(solution, dtype=int)
@@ -184,19 +176,17 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
             team_matrix = students_encoded[idx]
             current_n = len(idx)
 
-            idx_commit = 21 + n_tasks
-
             score_avail  = calculate_availability_score(team_matrix, current_n)
-            score_tasks  = calculate_tasks_score(team_matrix, n_tasks, tasks_start, idx_commit)
-            score_commit = calculate_commitment_score(team_matrix, idx_commit)
+            score_tasks  = calculate_tasks_score(team_matrix, ci.n_tasks, ci.tasks_start, ci.idx_commit)
+            score_commit = calculate_commitment_score(team_matrix, ci.idx_commit)
 
-            score_edu    = calculate_diversity_score(team_matrix, idx_edu, current_n, is_categorical=True)
-            score_job    = calculate_diversity_score(team_matrix, idx_job, current_n, is_categorical=True)
-            score_exp    = calculate_diversity_score(team_matrix, idx_exp, current_n, is_categorical=True)
+            score_edu    = calculate_diversity_score(team_matrix, ci.idx_edu, current_n, is_categorical=True)
+            score_job    = calculate_diversity_score(team_matrix, ci.idx_job, current_n, is_categorical=True)
+            score_exp    = calculate_diversity_score(team_matrix, ci.idx_exp, current_n, is_categorical=True)
 
-            score_age    = calculate_diversity_score(team_matrix, idx_age, current_n, is_categorical=False)
-            score_sex    = calculate_diversity_score(team_matrix, idx_sex, current_n, is_categorical=True)
-            score_lead   = calculate_lead_score(team_matrix, idx_lead)
+            score_age    = calculate_diversity_score(team_matrix, ci.idx_age, current_n, is_categorical=False)
+            score_sex    = calculate_diversity_score(team_matrix, ci.idx_sex, current_n, is_categorical=True)
+            score_lead   = calculate_lead_score(team_matrix, ci.idx_lead)
 
             size_penalty = calculate_size_penalty(current_n, min_size, max_size)
             size_deviation_penalty = calculate_size_deviation_penalty(current_n, int((min_size + max_size) / 2))
