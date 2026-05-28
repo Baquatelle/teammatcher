@@ -256,9 +256,16 @@ def index(request):
             # Read the uploaded file once into a string, then use it for both
             # the CSV snapshot and the dataframe — reading it twice would fail.
             csv_text = request.FILES["file"].read().decode("utf-8")
-            df = pd.read_csv(io.StringIO(csv_text))
-            df = df.dropna(how='all')
-            
+            try:
+                df = pd.read_csv(io.StringIO(csv_text))
+                df = df.dropna(how='all')
+                if 'username' not in df.columns:
+                    raise ValueError('missing_username_column')
+            except Exception:
+                form.add_error('file',
+                               'Could not read file. Please upload a valid comma-separated CSV with a username column.')
+                return render(request, 'teacher_side/index.html', {'form': form})
+
             team_template = form.cleaned_data.get('team_template')
             weights = get_weights(form)
             constraints = {
@@ -394,7 +401,7 @@ def download_historical_csv(request, generation_id):
     response = HttpResponse(
         content_type='text/csv',
         headers={
-            'Content-Disposition': 
+            'Content-Disposition':
                 f'attachment; filename="teams_{generation.generated_at.strftime("%Y%m%d_%H%M%S")}.csv"'
         },
     )
@@ -457,6 +464,8 @@ def api_move_student(request, session_id):
         body = json.loads(request.body)
         membership_id = int(body["membership_id"])
         team_id = body.get("team_id")  # None means unassigned
+        if team_id is not None:
+            team_id = int(team_id)
     except (KeyError, ValueError, json.JSONDecodeError):
         return JsonResponse({"ok": False, "error": "invalid_input"}, status=400)
 
@@ -469,7 +478,7 @@ def api_move_student(request, session_id):
 
     target_team = None
     if team_id is not None:
-        target_team = get_object_or_404(Team, pk=int(team_id), session=session)
+        target_team = get_object_or_404(Team, pk=team_id, session=session)
         if target_team.is_locked:
             return JsonResponse(
                 {"ok": False, "error": "target_team_locked"}, status=403
@@ -526,9 +535,9 @@ def export_csv(request, session_id):
 
     # Violation check
     try:
-        body = json.loads(request.body) if request.body else {}
-        confirmed = body.get("confirmed", False)
-    except json.JSONDecodeError:
+        body = json.loads(request.body)
+        confirmed = bool(body.get("confirmed", False))
+    except (ValueError, json.JSONDecodeError):
         confirmed = False
 
     if not confirmed:
