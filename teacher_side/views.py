@@ -264,7 +264,14 @@ def index(request):
             except Exception:
                 form.add_error('file',
                                'Could not read file. Please upload a valid comma-separated CSV with a username column.')
-                return render(request, 'teacher_side/index.html', {'form': form})
+                historical_generations = CSVGeneration.objects.order_by('-id')[:5]
+                latest_session = MatchingSession.objects.first()
+                return render(request, 'allocator/index.html', {
+                    'form': form,
+                    'teams': teams,
+                    'historical_generations': historical_generations,
+                    'latest_session': latest_session,
+                })
 
             team_template = form.cleaned_data.get('team_template')
             weights = get_weights(form)
