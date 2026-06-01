@@ -119,7 +119,6 @@ class FormlessProfileCorruptsViolationsBugTests(TestCase):
             "homogeneity warning, despite providing no real evidence of diversity.",
         )
 
-    @unittest.expectedFailure
     def test_formless_student_fabricates_age_diversity(self):
         s = make_session(age=1)
         t = add_team(s, "T1")
@@ -204,7 +203,6 @@ class BlankAgeSentinelBugTests(TestCase):
     conservative contract so the defect is visible.
     """
 
-    @unittest.expectedFailure
     def test_blank_age_fabricates_spread_and_suppresses_warning(self):
         s = make_session(age=1)
         t = add_team(s, "T1")
@@ -242,7 +240,6 @@ class MoveTeamIdValidationBugTests(TestCase):
     fast and deterministically.
     """
 
-    @unittest.expectedFailure
     def test_non_numeric_team_id_returns_400_not_500(self):
         from django.contrib.auth import get_user_model
         from django.test import Client
