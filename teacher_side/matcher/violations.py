@@ -141,8 +141,11 @@ def compute_session_violations(session):
                     codes.append('education')
 
             if count >= 2 and weight('age') > 0:
-                if float(np.std(team_matrix[:, ci.idx_age])) < 1.0:
-                    codes.append('age')
+                age_data = team_matrix[:, ci.idx_age]
+                valid_entries = age_data[~np.isnan(age_data)]
+                if len(valid_entries) >= 2:
+                    if float(np.nanstd(valid_entries)) < 1.0:
+                        codes.append('age')
 
             if count >= 2 and weight('gender') > 0:
                 if len(np.unique(team_matrix[:, ci.idx_sex])) == 1:
