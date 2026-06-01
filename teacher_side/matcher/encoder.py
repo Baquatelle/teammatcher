@@ -106,6 +106,8 @@ def encode_student(student, tasks):
         student_encoded[offset + 2] = professional_map[student.professional_background]
     if student.age is not None:
         student_encoded[offset + 3] = student.age
+    else:
+        student_encoded[offset + 3] = np.nan
     if student.gender in sex_map:
         student_encoded[offset + 4] = sex_map[student.gender]
     if student.experience_level in experience_map:
