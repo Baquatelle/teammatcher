@@ -52,8 +52,6 @@ TRANSPARENCY (flagged)
 import io
 import itertools
 import json
-import unittest
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client, tag
 from django.urls import reverse
@@ -508,11 +506,9 @@ class FormlessMaskingEndpointBugTests(TestCase):
     """
     B-1 at the endpoint level: a move that results in an all-female team where one
     member is form-less (no profile, encoded gender=male) should still report a
-    'gender' violation, but currently does not. Marked expectedFailure so the suite
-    stays green while documenting the deviation.
+    'gender' violation.
     """
 
-    @unittest.expectedFailure
     def test_B1_formless_member_masks_gender_violation(self):
         c = staff_client()
         s = make_session(gender=1)

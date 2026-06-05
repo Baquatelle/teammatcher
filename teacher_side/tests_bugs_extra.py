@@ -3,11 +3,8 @@ NEW bug-demonstrating tests for the Task 6 modules — beyond the four already i
 teacher_side/tests.py.
 
 METHODOLOGY (same as the existing bug suite)
-    Each test asserts the *correct* behaviour and is marked @unittest.expectedFailure.
-    Against the current code it FAILS on purpose — that failure is the proof of the
-    defect — so `python manage.py test` stays GREEN and reports them as
-    "expected failures". When a bug is fixed, the test becomes an "unexpected success":
-    your signal to drop the decorator and promote it to a regression test.
+    Each test asserts the *correct* behaviour. These started as expected-failure
+    probes and now run as normal regression tests.
 
 TRANSPARENCY (flagged)
     These tests could not be executed in the authoring environment (Django and PyGAD
@@ -21,8 +18,6 @@ TRANSPARENCY (flagged)
 """
 
 import json
-import unittest
-
 from django.test import TestCase
 
 from student_side.models import StudentProfile, Task
@@ -105,7 +100,6 @@ class FormlessProfileCorruptsViolationsBugTests(TestCase):
     identical must still be flagged.
     """
 
-    @unittest.expectedFailure
     def test_formless_student_masks_gender_homogeneity(self):
         s = make_session(gender=1)
         t = add_team(s, "T1")
@@ -159,13 +153,12 @@ class TasksSizeOneDocDriftBugTests(TestCase):
     contract so the drift is visible.
     """
 
-    @unittest.expectedFailure
     def test_tasks_evaluated_for_single_member_team(self):
         s = make_session(min_size=1, max_size=3, tasks=1)
         t = add_team(s, "T1")
         Task.objects.create(name="t1", active=True)  # n_tasks > 0
         # A real lone student who prefers no task at all.
-        make_real_student("solo", lead="lead")  # lead=lead so 'lead' won't appear
+        make_real_student("solo", lead_preference="lead")  # lead_preference=lead so 'lead' won't appear
         add_member(s, t, "solo")
         # CORRECT per C.2: tasks applies to size-1 teams → empty preferences violate.
         self.assertIn(
