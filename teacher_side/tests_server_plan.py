@@ -214,17 +214,105 @@ class MoveStudentTests(TestCase):
         self.m_b = add_member(self.s, self.t1, "b")
 
     def test_M1_move_returns_counts_and_violations(self):
+        """M-1: a valid move returns all four payload keys with correct values.
+
+        Setup: Team 1 = [a(M), b(F)], Team 2 = [].  min=2, gender weight=1.
+        Move a → Team 2.  Team 1 then has 1 member (< min=2) → size violation.
+        Team 2 then has 1 member (< min=2) → size violation.
+        """
         resp = post_json(self.c, "api_move_student", self.s.id,
                          body={"membership_id": self.m_a.id, "team_id": self.t2.id})
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data["ok"])
+
+        # All payload keys must be present.
         for key in ("from_count", "to_count", "from_violations", "to_violations",
                     "violation_team_count"):
             self.assertIn(key, data)
         self.assertIsInstance(data["violation_team_count"], int)
+
+        # Counts must reflect the post-move state.
+        self.assertEqual(data["from_count"], 1)   # Team 1 lost one member
+        self.assertEqual(data["to_count"],   1)   # Team 2 gained one member
+
+        # Violations must be lists, not None or absent.
+        self.assertIsInstance(data["from_violations"], list)
+        self.assertIsInstance(data["to_violations"],   list)
+
+        # Team 1 now has 1 member which is below min=2 → must report size.
+        self.assertIn("size", data["from_violations"],
+                      "from_violations should include 'size' when source team drops "                      "below min_size after the move.")
+        # Team 2 likewise has 1 member.
+        self.assertIn("size", data["to_violations"],
+                      "to_violations should include 'size' when target team is below "                      "min_size after receiving the student.")
+
+        # DB state must match.
         self.m_a.refresh_from_db()
         self.assertEqual(self.m_a.team_id, self.t2.id)
+
+    def test_M1b_soft_violation_appears_after_clean_start_move(self):
+        """M-1b: moving a student out of a valid team creates a soft-constraint
+        violation that the server correctly returns in from_violations.
+
+        This mirrors the post-rematch scenario: both teams start within size bounds
+        and with no violations; one drag-and-drop creates a homogeneous-gender team.
+        The server must recalculate and return the new violation code so the
+        frontend can light up the corresponding chip without a page reload.
+
+        Setup (min=2, max=5, gender weight=1):
+          Team 1: [alice(F), bob(M), carol(F)]  → valid (mixed, size=3)
+          Team 2: [dave(M), eve(F),  frank(M)]  → valid (mixed, size=3)
+        Move alice(F) → Team 2.
+          Team 1: [bob(M), carol(F)]            → valid size (2), mixed → no violations
+          Team 2: [dave, eve, frank, alice]     → valid size (4), mixed → no violations
+        Move carol(F) → Team 2 (second drag).
+          Team 1: [bob(M)]                      → size=1 < min=2 → size violation
+                                                   AND only males → gender violation
+          Team 2: [dave, eve, frank, alice, carol] → size=5 ≤ max=5, mixed → no violations
+        """
+        c = staff_client()
+        s = make_session(min_size=2, max_size=5, gender=1)
+        t1 = make_team(s, "Team 1")
+        t2 = make_team(s, "Team 2")
+        make_student("alice", gender="female")
+        make_student("bob",   gender="male")
+        make_student("carol", gender="female")
+        make_student("dave",  gender="male")
+        make_student("eve",   gender="female")
+        make_student("frank", gender="male")
+        m_alice = add_member(s, t1, "alice")
+        m_bob   = add_member(s, t1, "bob")
+        m_carol = add_member(s, t1, "carol")
+        add_member(s, t2, "dave")
+        add_member(s, t2, "eve")
+        add_member(s, t2, "frank")
+
+        # First drag: alice(F) → Team 2.  Both teams still valid, no violations.
+        r1 = post_json(c, "api_move_student", s.id,
+                       body={"membership_id": m_alice.id, "team_id": t2.id})
+        self.assertEqual(r1.status_code, 200)
+        d1 = r1.json()
+        self.assertTrue(d1["ok"])
+        self.assertNotIn("size", d1["from_violations"],
+                         "After first drag Team 1 has 2 members (within bounds) — "                         "no size violation expected.")
+        self.assertEqual(d1["from_count"], 2)
+
+        # Second drag: carol(F) → Team 2.  Team 1 is now [bob(M)] — below min.
+        r2 = post_json(c, "api_move_student", s.id,
+                       body={"membership_id": m_carol.id, "team_id": t2.id})
+        self.assertEqual(r2.status_code, 200)
+        d2 = r2.json()
+        self.assertTrue(d2["ok"])
+
+        # Team 1 has 1 member → size violation must be reported.
+        self.assertIn("size", d2["from_violations"],
+                      "from_violations must include 'size' when source team has "                      "1 member and min_size=2 — the frontend needs this to light "                      "up the warning chip without a page reload.")
+
+        # With count=1 the gender rule requires count>=2, so gender doesn't fire;
+        # but size definitely must.
+        self.assertNotIn("size", d2["to_violations"],
+                         "Team 2 has 5 members (≤ max=5) — no size violation.")
 
     def test_M2_move_to_unassigned(self):
         resp = post_json(self.c, "api_move_student", self.s.id,
