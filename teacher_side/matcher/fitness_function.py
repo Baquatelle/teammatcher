@@ -85,7 +85,11 @@ def calculate_diversity_score(team_matrix, idx, current_n, is_categorical=True):
     if is_categorical:
         # Maximize unique types (Blau Index proxy)
         return len(np.unique(col_data)) / current_n
-    return min(np.std(col_data) / 5.0, 1.0)
+    else:
+        valid_entries = col_data[~np.isnan(col_data)]
+        if len(valid_entries) < 2:
+            return 0.0
+        return min(np.nanstd(valid_entries) / 5.0, 1.0)
 
 
 def calculate_lead_score(team_matrix, idx_lead):
