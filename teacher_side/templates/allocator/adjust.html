@@ -27,7 +27,7 @@
     <i class="bi bi-people-fill me-2 text-secondary"></i>Adjust Teams
   </span>
 
-  <span id="violationSummary" class="badge-violation"{% if not violation_count %} hidden{% endif %}>
+  <span id="violationSummary" class="badge-violation" role="status" aria-live="polite" aria-atomic="true"{% if not violation_count %} hidden{% endif %}>
     <i class="bi bi-exclamation-triangle-fill me-1"></i>
     <span data-violation-count>{{ violation_count|default:0 }}</span> team<span data-violation-noun-s>{{ violation_count|pluralize }}</span> <span data-violation-verb>{{ violation_count|pluralize:"has,have" }}</span> violations
   </span>
@@ -375,6 +375,32 @@
     }
   }
 
+  // ── Toolbar violation summary ────────────────────────────────────
+  // Mirrors Django's pluralize and pluralize:"has,have" semantics: singular
+  // form only when count === 1; hidden entirely when count === 0.
+  //
+  // Ordering matters for the aria-live="polite" region on #violationSummary:
+  //   - count === 0: hide first and skip text updates, so screen readers don't
+  //     announce a stale "0 teams have violations" before the badge disappears.
+  //   - count  >  0: update text BEFORE unhiding, so when the live region
+  //     transitions from hidden to visible the announced content is already
+  //     correct on first registration (more reliable on Safari + VoiceOver).
+  function updateViolationSummary(count) {
+    const el = document.getElementById('violationSummary');
+    if (!el) return;
+    if (count === 0) {
+      el.hidden = true;
+      return;
+    }
+    const countEl = el.querySelector('[data-violation-count]');
+    if (countEl) countEl.textContent = String(count);
+    const nounEl = el.querySelector('[data-violation-noun-s]');
+    if (nounEl) nounEl.textContent = count === 1 ? '' : 's';
+    const verbEl = el.querySelector('[data-violation-verb]');
+    if (verbEl) verbEl.textContent = count === 1 ? 'has' : 'have';
+    el.hidden = false;
+  }
+
   // ── Drag-and-drop (SortableJS) ───────────────────────────────────
   async function handleDrop(evt) {
     const item = evt.item;
@@ -397,6 +423,8 @@
         renderViolations(fromList.dataset.teamId || null, r.data.from_violations);
       if (Array.isArray(r.data.to_violations))
         renderViolations(teamId, r.data.to_violations);
+      if (typeof r.data.violation_team_count === 'number')
+        updateViolationSummary(r.data.violation_team_count);
     } else {
       // Revert: put item back at its original position
       const isSameList = fromList === toList;
