@@ -27,12 +27,10 @@
     <i class="bi bi-people-fill me-2 text-secondary"></i>Adjust Teams
   </span>
 
-  {% if violation_count %}
-  <span class="badge-violation">
+  <span id="violationSummary" class="badge-violation"{% if not violation_count %} hidden{% endif %}>
     <i class="bi bi-exclamation-triangle-fill me-1"></i>
-    {{ violation_count }} team{{ violation_count|pluralize }} {{ violation_count|pluralize:"has,have" }} violations
+    <span data-violation-count>{{ violation_count|default:0 }}</span> team<span data-violation-noun-s>{{ violation_count|pluralize }}</span> <span data-violation-verb>{{ violation_count|pluralize:"has,have" }}</span> violations
   </span>
-  {% endif %}
 
   <button type="button" class="btn btn-sm btn-outline-info"
           data-bs-toggle="modal" data-bs-target="#rematchModal">
