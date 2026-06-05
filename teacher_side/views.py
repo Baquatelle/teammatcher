@@ -505,6 +505,10 @@ def api_move_student(request, session_id):
     team_violations = compute_session_violations(session)
     from_violations = team_violations.get(old_team.id, []) if old_team else []
     to_violations = team_violations.get(target_team.id, []) if target_team else []
+    # Total number of teams currently in violation, used by the toolbar summary
+    # so it can update live without a page reload. Computed the same way as in
+    # adjust_teams() to keep the two views in lockstep.
+    violation_team_count = sum(1 for codes in team_violations.values() if codes)
 
     return JsonResponse({
         "ok": True,
@@ -512,6 +516,7 @@ def api_move_student(request, session_id):
         "to_count": to_count,
         "from_violations": from_violations,
         "to_violations": to_violations,
+        "violation_team_count": violation_team_count,
     })
 
 

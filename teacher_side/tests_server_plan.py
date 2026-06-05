@@ -219,8 +219,10 @@ class MoveStudentTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
         self.assertTrue(data["ok"])
-        for key in ("from_count", "to_count", "from_violations", "to_violations"):
+        for key in ("from_count", "to_count", "from_violations", "to_violations",
+                    "violation_team_count"):
             self.assertIn(key, data)
+        self.assertIsInstance(data["violation_team_count"], int)
         self.m_a.refresh_from_db()
         self.assertEqual(self.m_a.team_id, self.t2.id)
 
