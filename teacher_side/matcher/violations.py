@@ -142,7 +142,12 @@ def compute_session_violations(session):
 
             if count >= 2 and weight('age') > 0:
                 known_ages = team_matrix[:, ci.idx_age]
-                known_ages = known_ages[known_ages != 0]
+                # Exclude both the form-less sentinel (0) and NaN produced when a
+                # real student left the age field blank (encoder writes np.nan for
+                # age=None).  np.nan != 0 is True, so the old filter let NaN through;
+                # np.std([real_age, nan]) == nan; nan < 1.0 == False, silently
+                # suppressing the violation even when only one real age is known.
+                known_ages = known_ages[np.isfinite(known_ages) & (known_ages != 0)]
                 if len(known_ages) >= 2 and float(np.std(known_ages)) < 1.0:
                     codes.append('age')
                 elif len(known_ages) < 2:
