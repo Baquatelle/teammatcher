@@ -123,21 +123,23 @@ def calculate_size_penalty(current_n: int) -> float:
         return 0.5 # heavy penalty to force immediate resolution
 
 
-def make_fitness_func(students_encoded, weights):
+def make_fitness_func(students_encoded, weights, constraints=None):
     """
     Creates the fitness function with specific weights for every criteria.
     Args:
         - students_encoded (np.ndarray): encoded student data
-        - min_size (int): minimum team size
-        - max_size (int): maximum team size
         - weights (list of float): weights for each criteria
+        - constraints: dict with min_size/max_size (ignored, kept for API compatibility)
     Returns:
         - function: fitness function for GA
     """
+    _ = constraints # ignore unused parameters
     w_avail, w_commit, w_job, w_edu, w_age, w_gender, w_exp, w_lead, w_tasks = weights
     ci = col_idx(students_encoded)
 
     def fitness_func(ga_instance, solution, solution_idx):
+        _ = ga_instance # parameter required by GA framework API
+        _ = solution_idx # parameter required by GA framework API
         solution_int = np.asarray(solution, dtype=int)
         if solution_int.size == 0: # empty
             return 0.0
