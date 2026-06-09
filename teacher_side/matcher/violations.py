@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from teacher_side.matcher.encoder import col_idx, prepare_data
+from student_side.models import StudentProfile
 
 
 # Canonical ordering for output codes. Mirrors WEIGHT_KEYS with 'size' prepended.
@@ -100,6 +101,12 @@ def compute_session_violations(session):
     encoded = prepare_data(df)
 
     ci = col_idx(encoded)
+    profile_by_username = {
+        p.student_id: p
+        for p in StudentProfile.objects.filter(
+            student_id__in=[m.username for m in memberships]
+        )
+    }
 
     team_to_indices = defaultdict(list)
     for i, m in enumerate(memberships):
@@ -118,6 +125,10 @@ def compute_session_violations(session):
 
         if count >= 1:
             team_matrix = encoded[indices]
+            team_profiles = [
+                profile_by_username.get(memberships[i].username)
+                for i in indices
+            ]
 
             # availability needs at least 1 member; "no perfect-overlap slot".
             if weight('availability') > 0:
@@ -142,14 +153,24 @@ def compute_session_violations(session):
 
             if count >= 2 and weight('age') > 0:
                 known_ages = team_matrix[:, ci.idx_age]
-                known_ages = known_ages[known_ages != 0]
+                # Exclude both the form-less sentinel (0) and NaN produced when a
+                # real student left the age field blank (encoder writes np.nan for
+                # age=None).  np.nan != 0 is True, so the old filter let NaN through;
+                # np.std([real_age, nan]) == nan; nan < 1.0 == False, silently
+                # suppressing the violation even when only one real age is known.
+                known_ages = known_ages[np.isfinite(known_ages) & (known_ages != 0)]
                 if len(known_ages) >= 2 and float(np.std(known_ages)) < 1.0:
                     codes.append('age')
                 elif len(known_ages) < 2:
                     codes.append('age')
 
             if count >= 2 and weight('gender') > 0:
-                if len(np.unique(team_matrix[:, ci.idx_sex])) == 1:
+                genders = [
+                    p.gender
+                    for p in team_profiles
+                    if p is not None and p.gender
+                ]
+                if genders and len(set(genders)) == 1:
                     codes.append('gender')
 
             if count >= 2 and weight('experience') > 0:
@@ -161,8 +182,8 @@ def compute_session_violations(session):
                 if int(np.sum(team_matrix[:, ci.idx_lead])) != 1:
                     codes.append('lead')
 
-            # 'tasks' needs >=2 members and a non-empty task pool.
-            if count >= 2 and ci.n_tasks > 0 and weight('tasks') > 0:
+            # 'tasks' applies even to single-member teams when a task pool exists.
+            if ci.n_tasks > 0 and weight('tasks') > 0:
                 tasks_matrix = team_matrix[:, ci.tasks_start:ci.tasks_start + ci.n_tasks]
                 if tasks_matrix.size > 0:
                     max_agreement = int(np.max(np.sum(tasks_matrix, axis=0)))

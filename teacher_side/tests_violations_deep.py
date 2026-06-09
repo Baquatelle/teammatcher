@@ -380,17 +380,21 @@ class WeightGatingTests(TestCase):
 
 class SizeOneEvaluationMatrixTests(TestCase):
     def test_size_one_skips_diversity_and_std_rules(self):
-        """With every weight on, a size-1 team can only show size/availability/lead —
-        the diversity, std, and tasks rules require >= 2 members."""
+        """With every weight on, a size=1 team skips diversity/std rules.
+
+        The documented size=1 rules are size, availability, lead, and tasks.
+        """
         s = make_session(min_size=1, max_size=3, **{k: 1 for k in WEIGHT_KEYS})
         t = add_team_(s, "T1")
         # one member, leader (so 'lead' won't fire), with a free slot (so 'availability'
-        # won't fire) — leaving NO code at all.
+        # won't fire). With no preferred tasks, only the tasks rule should fire.
+        Task.objects.create(name="t1", active=True)
         make_student("solo", lead="lead", monday_slot="Morning")
         add_member(s, t, "solo")
         codes = codes_for(s, t)
-        for c in ("commitment", "job", "education", "age", "gender", "experience", "tasks"):
-            self.assertNotIn(c, codes, f"{c} must not be evaluated for a size-1 team")
+        for c in ("commitment", "job", "education", "age", "gender", "experience"):
+            self.assertNotIn(c, codes, f"{c} must not be evaluated for a size=1 team")
+        self.assertIn("tasks", codes, "tasks is evaluated for size=1 teams")
 
 
 # ====================================================================
