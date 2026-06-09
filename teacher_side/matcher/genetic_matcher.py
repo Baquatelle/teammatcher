@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def match(df, team_template, weights, constraints, on_generation=None, random_seed=None):
-    """ 
+    """
         Matches students into teams using genetic algorithm
         Args:
             - df: pandas Dataframe containing student data from uploaded CSV
@@ -48,9 +48,8 @@ def match(df, team_template, weights, constraints, on_generation=None, random_se
 
     fitness_func = make_fitness_func(
         students_encoded,
-        min_size=min_size,
-        max_size=max_size,
-        weights=weights
+        weights=weights,
+        constraints=constraints
     )
     gene_space = list(range(n_teams))
 
@@ -96,7 +95,7 @@ def match(df, team_template, weights, constraints, on_generation=None, random_se
             if df[col].isnull().all():
                 target_col = col
                 break
-            
+
     if target_col: # adds results to first empty column after 'mode'
         df[target_col] = team_assignments
     else: # creates new column 'teams'
