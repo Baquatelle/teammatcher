@@ -110,59 +110,36 @@ def calculate_lead_score(team_matrix, idx_lead):
     return 0.5
 
 
-# Reference: "Penalty Function Methods for Constrained Optimization with Genetic Algorithms" (Gen & Cheng).
-# Quadratic penalty encourages convergence to valid constraints.
-def calculate_size_penalty(current_n, min_size, max_size):
-    """
-    Calculates size penalty based on team size constraints.
-    Returns 0.0 if size is within [min, max].
-    Otherwise, returns quadratic penalty based on distance to nearest bound.
-    Args:
-        - current_n (int): current team size
-        - min_size (int): minimum team size
-        - max_size (int): maximum team size
-    Returns:
-        - float: size penalty
-    """
-    if min_size <= current_n <= max_size:
-        return 0.0
-
-    # distance to nearest valid bound
-    diff = min(abs(current_n - min_size), abs(current_n - max_size))
-
-    # scale penalty
-    return (diff ** 2) * 0.5
+# changed this to ensure that team size calculation does not interfere with weighted criteria:
+def calculate_size_penalty(current_n: int) -> float:
+    #perfect range
+    if 3 <= current_n <= 5:
+        return 0 #no penalty
+    #warning range
+    elif current_n == 2 or current_n == 6:
+        return 0.1 # moderate penalty, allows, but discourages movement
+    #violation range
+    else:
+        return 0.5 # heavy penalty to force immediate resolution
 
 
-# added this to avoid weird behavior where constraint values differ a lot
-def calculate_size_deviation_penalty(current_n, avg_team_size):
-    """
-    Calculates the size penalty for a team based on deviation from average team size
-    Args:
-        - current_n (int): number of members in the team
-        - team_size (int): desired team size
-    Returns:
-        - float: size penalty (higher is worse)
-    """
-    size_diff = abs(current_n - avg_team_size)
-    return (size_diff ** 2) / (avg_team_size * 2)
-
-
-def make_fitness_func(students_encoded, min_size,max_size, weights):
+def make_fitness_func(students_encoded, weights, constraints=None):
     """
     Creates the fitness function with specific weights for every criteria.
     Args:
         - students_encoded (np.ndarray): encoded student data
-        - min_size (int): minimum team size
-        - max_size (int): maximum team size
         - weights (list of float): weights for each criteria
+        - constraints: dict with min_size/max_size (ignored, kept for API compatibility)
     Returns:
         - function: fitness function for GA
     """
+    _ = constraints # ignore unused parameters
     w_avail, w_commit, w_job, w_edu, w_age, w_gender, w_exp, w_lead, w_tasks = weights
     ci = col_idx(students_encoded)
 
     def fitness_func(ga_instance, solution, solution_idx):
+        _ = ga_instance # parameter required by GA framework API
+        _ = solution_idx # parameter required by GA framework API
         solution_int = np.asarray(solution, dtype=int)
         if solution_int.size == 0: # empty
             return 0.0
@@ -170,7 +147,6 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
         num_teams = solution_int.max() + 1
         total_fitness = 0.0
         valid_teams = 0
-        total_weight = sum(weights)
 
         for t in range(num_teams):
             idx = np.where(solution_int == t)[0]
@@ -179,6 +155,8 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
 
             team_matrix = students_encoded[idx]
             current_n = len(idx)
+
+            print(f"Team {t}: n={current_n}")
 
             score_avail  = calculate_availability_score(team_matrix, current_n)
             score_tasks  = calculate_tasks_score(team_matrix, ci.n_tasks, ci.tasks_start, ci.idx_commit)
@@ -192,8 +170,11 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
             score_sex    = calculate_diversity_score(team_matrix, ci.idx_sex, current_n, is_categorical=True)
             score_lead   = calculate_lead_score(team_matrix, ci.idx_lead)
 
-            size_penalty = calculate_size_penalty(current_n, min_size, max_size)
-            size_deviation_penalty = calculate_size_deviation_penalty(current_n, int((min_size + max_size) / 2))
+            print(f"Team {t}: score_edu={score_edu}, score_job={score_job}")
+
+            size_penalty = calculate_size_penalty(current_n)
+
+            print(f"Team {t}: size_penalty={size_penalty}")
 
             team_score = (
                 (score_avail  * w_avail) +
@@ -207,13 +188,19 @@ def make_fitness_func(students_encoded, min_size,max_size, weights):
                 (score_lead   * w_lead)
             )
 
+            print(f"Team {t}: weighted_sum={team_score}")
+
             # normalize by sum of weights to keep score in range [0, 1]
             total_weight = sum(weights)
             if total_weight > 0:
                 team_score /= total_weight
 
+            print(f"Team {t}: after_normalization={team_score}, total_weight={total_weight}")
+
             # apply penalties
-            team_score = team_score - size_penalty - size_deviation_penalty
+            team_score = team_score - size_penalty
+
+            print(f"Team {t}: after_penalties={team_score}")
 
             total_fitness += max(team_score, 0.0)
             valid_teams += 1
