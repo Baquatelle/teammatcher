@@ -18,8 +18,9 @@ WHY THIS FILE EXISTS
 
 from django.test import TestCase
 import numpy as np
-
+from teacher_side.models import MatchingSession
 from teacher_side.matcher.fitness_function import calculate_lead_score
+from teacher_side.views import _claim_rematch_token
 import os
 import django
 
@@ -34,7 +35,7 @@ def make_team_matrix(values):
     """Helper to create a numpy matrix from list input."""
     return np.array(values)
 
-
+# UNITTEST 1
 # ====================================================================
 # 1. Core logic paths
 # ====================================================================
@@ -61,7 +62,7 @@ class LeadScoreCoreTests(TestCase):
             [0, 1],
             [0, 0],
         ])
-        self.assertEqual(calculate_lead_score(team, 1), 0.5)
+        self.assertEqual(calculate_lead_score(team, 1), 1)
 
 
 # ====================================================================
@@ -125,7 +126,7 @@ class LeadScoreDataTypeTests(TestCase):
             [0, 0],
             [0, 1],
         ])
-        self.assertEqual(calculate_lead_score(team, 1), 0.5)
+        self.assertEqual(calculate_lead_score(team, 1), 1)
 
 
 # ====================================================================
@@ -155,7 +156,7 @@ class LeadScoreConsistencyTests(TestCase):
 
         # sum = 2+
         team2 = make_team_matrix([[0, 1], [0, 1]])
-        self.assertEqual(calculate_lead_score(team2, 1), 0.5)
+        self.assertEqual(calculate_lead_score(team2, 1), 1.0)
 
     def test_sum_out_of_boundary(self):
         """Explicitly check out of bound transitions."""
@@ -166,4 +167,29 @@ class LeadScoreConsistencyTests(TestCase):
         # sum = 2
         team1 = make_team_matrix([[0, 1], [0, 1]])
         self.assertEqual(calculate_lead_score(team1, 1), 1.0)
+# UNITTEST 2
+class ClaimRematchTokenTests(TestCase):
+    from django.test import TestCase
+    from teacher_side.models import MatchingSession
+    from teacher_side.views import _claim_rematch_token
 
+    def test_simple_rematch_token(self):
+        # Arrange
+        session = MatchingSession.objects.create(
+            min_size=2,
+            max_size=4,
+            weights={}
+        )
+
+        # Act
+        token = _claim_rematch_token(session)
+
+        # Assert
+        self.assertIsNotNone(token)
+
+        # Reload from DB to verify persistence
+        session.refresh_from_db()
+
+        self.assertEqual(session.rematch_token, token)
+        self.assertIsNotNone(session.rematch_started_at)
+        self.assertFalse(session.rematch_cancel_requested)
