@@ -103,9 +103,9 @@ def calculate_lead_score(team_matrix, idx_lead):
         - float: lead preference score between 0.0 and 1.0
     """
     leads_sum = np.sum(team_matrix[:, idx_lead])
-    if leads_sum == 1:
+    if leads_sum >= 1:
         return 1.0
-    if leads_sum == 0:
+    if leads_sum <= 0:
         return 0.0
     return 0.5
 
